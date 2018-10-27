@@ -17,7 +17,6 @@
 #define IMT_KERNEL_DEBUG
 
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
@@ -37,7 +36,6 @@ namespace IceMilkTea.Core
     [HideCreateGameMainAssetMenu]
     public abstract class GameMain : ScriptableObject
     {
-        #region プロパティ
         /// <summary>
         /// 現在のゲームメインコンテキストを取得します
         /// </summary>
@@ -48,11 +46,10 @@ namespace IceMilkTea.Core
         /// 現在のゲームメインが保持しているサービスマネージャを取得します
         /// </summary>
         public GameServiceManager ServiceManager { get; private set; }
-        #endregion
 
 
 
-        #region エントリポイントとロジック関数
+        #region エントリポイント＆シャットダウン
         /// <summary>
         /// Unity起動時に実行されるゲームのエントリポイントです
         /// </summary>
@@ -96,32 +93,6 @@ namespace IceMilkTea.Core
 
 
         /// <summary>
-        /// 指定されたゲームメインによって動作を上書きします。
-        /// この関数は、テストの為に用意された関数であり、通常のゲームロジック上で使用される想定はありません。
-        /// 動作の切り替えや、想定のゲームメイン動作を設定する場合は GameMain.RedirectGameMain 関数をオーバーライドして下さい。
-        /// </summary>
-        /// <param name="gameMain">上書きするゲームメインの参照</param>
-        internal static void OverrideGameMain(GameMain gameMain)
-        {
-            // 起動中のゲームメインがあるのなら
-            if (Current != null)
-            {
-                // 何があろうとシャットダウンして、ImtPlayerLoopSystemから既定Unityループシステムを読み込んで上書きすることですべての登録を破壊できる
-                InternalShutdown();
-                ImtPlayerLoopSystem.GetUnityDefaultPlayerLoop().BuildAndSetUnityPlayerLoop();
-            }
-
-
-            // 渡されたゲームメインを設定して初期化を実行する
-            Current = gameMain;
-            Current.ServiceManager = Current.CreateGameServiceManager();
-            RegisterHandler();
-            Current.ServiceManager.Startup();
-            Current.Startup();
-        }
-
-
-        /// <summary>
         /// Unityのアプリケーション終了時に処理するべき後処理を行います
         /// </summary>
         private static void InternalShutdown()
@@ -137,8 +108,10 @@ namespace IceMilkTea.Core
             // ゲームのシャットダウンをする
             Current.Shutdown();
         }
+        #endregion
 
 
+        #region GameMainロード＆永続ゲームオブジェクト生成
         /// <summary>
         /// ゲームメインをロードします
         /// </summary>
@@ -158,7 +131,7 @@ namespace IceMilkTea.Core
 
 
             // リダイレクトするGameMainがあるか聞いて、存在するなら
-            var redirectGameMain = gameMain.RedirectGameMain();
+            var redirectGameMain = gameMain.Redirect();
             if (redirectGameMain != null)
             {
                 // リダイレクトされたGameMainを設定して、ロードされたGameMainを解放
@@ -172,6 +145,63 @@ namespace IceMilkTea.Core
         }
 
 
+        /// <summary>
+        /// 永続的に存在し続けるゲームオブジェクトを生成します。
+        /// この関数で生成されるゲームオブジェクトはヒエラルキに表示されません。
+        /// また、名前はNewGameObjectとして作られます。
+        /// </summary>
+        /// <returns>生成された永続ゲームオブジェクトを返します</returns>
+        public static GameObject CreatePersistentGameObject()
+        {
+            // "NewGameObject" な見えないゲームオブジェクトを生成して返す
+            return CreatePersistentGameObject("NewGameObject", HideFlags.HideInHierarchy);
+        }
+
+
+        /// <summary>
+        /// 永続的に存在し続けるゲームオブジェクトを生成します。
+        /// この関数で生成されるゲームオブジェクトはヒエラルキに表示されません。
+        /// </summary>
+        /// <param name="name">生成する永続ゲームオブジェクトの名前</param>
+        /// <returns>生成された永続ゲームオブジェクトを返します</returns>
+        public static GameObject CreatePersistentGameObject(string name)
+        {
+            // 見えないゲームオブジェクトを生成して返す
+            return CreatePersistentGameObject(name, HideFlags.HideInHierarchy);
+        }
+
+
+        /// <summary>
+        /// 永続的に存在し続けるゲームオブジェクトを生成します。
+        /// </summary>
+        /// <param name="name">生成する永続ゲームオブジェクトの名前</param>
+        /// <param name="hideFlags">生成する永続ゲームオブジェクトの隠しフラグ</param>
+        /// <returns>生成された永続ゲームオブジェクトを返します</returns>
+        public static GameObject CreatePersistentGameObject(string name, HideFlags hideFlags)
+        {
+            // ゲームオブジェクトを生成する
+            var gameObject = new GameObject(name);
+
+
+            // ヒエラルキから姿を消して永続化
+            gameObject.hideFlags = hideFlags;
+            UnityEngine.Object.DontDestroyOnLoad(gameObject);
+
+
+            // トランスフォームを取得して念の為初期値を入れる
+            var transform = gameObject.GetComponent<Transform>();
+            transform.position = Vector3.zero;
+            transform.rotation = Quaternion.identity;
+            transform.localScale = Vector3.one;
+
+
+            // 作ったゲームオブジェクトを返す
+            return gameObject;
+        }
+        #endregion
+
+
+        #region イベントハンドラ登録＆解除
         /// <summary>
         /// GameMainの動作に必要なハンドラの登録処理を行います
         /// </summary>
@@ -202,64 +232,6 @@ namespace IceMilkTea.Core
             // アプリケーション終了イベントを外す
             // （PlayerLoopSystemはPlayerLoopSystem自身が登録解除まで担保してくれているのでそのまま）
             Application.quitting -= InternalShutdown;
-        }
-        #endregion
-
-
-        #region オーバーライド可能なGameMainのハンドラ関数
-        /// <summary>
-        /// IceMilkTeaのシステムがこのまま継続して起動するかどうかを判断します
-        /// </summary>
-        /// <returns>起動を継続する場合は true を、継続しない場合は false を返します</returns>
-        protected virtual bool Continue()
-        {
-            // 通常は起動を継続する
-            return true;
-        }
-
-
-        /// <summary>
-        /// 起動するGameMainをリダイレクトします。
-        /// IceMilkTeaによって起動されたGameMainから他のGameMainへリダイレクトする場合は、
-        /// この関数をオーバーライドして起動するGameMainのインスタンスを返します。
-        /// </summary>
-        /// <returns>リダイレクトするGameMainがある場合はインスタンスを返しますが、ない場合はnullを返します</returns>
-        protected virtual GameMain RedirectGameMain()
-        {
-            // リダイレクト先GameMainはなし
-            return null;
-        }
-
-
-        /// <summary>
-        /// ゲームの起動処理を行います。
-        /// 主に、ゲームサービスの初期登録や必要な追加モジュールの初期化などを行います。
-        /// </summary>
-        protected virtual void Startup()
-        {
-        }
-
-
-        /// <summary>
-        /// ゲームの終了処理を行います。
-        /// ゲームサービスそのものの終了処理は、サービス側で処理されるべきで、
-        /// この関数では主に、追加モジュールなどの解放やサービス管轄外の解放などを行うべきです。
-        /// </summary>
-        protected virtual void Shutdown()
-        {
-        }
-
-
-        /// <summary>
-        /// ゲームサービスを管理する、サービスマネージャを生成します。
-        /// ゲームサービスの管理をカスタマイズする場合は、
-        /// この関数をオーバーライドしてGameServiceManagerを継承したクラスのインスタンスを返します。
-        /// </summary>
-        /// <returns>GameServiceManager のインスタンスを返します</returns>
-        protected virtual GameServiceManager CreateGameServiceManager()
-        {
-            // 通常は、素のゲームサービスマネージャを生成して返す
-            return new GameServiceManager();
         }
         #endregion
 
@@ -422,6 +394,68 @@ namespace IceMilkTea.Core
         #endregion
 
 
+        #region GameMainイベントハンドラ
+        /// <summary>
+        /// 起動するGameMainをリダイレクトします。
+        /// IceMilkTeaによって起動されたGameMainから他のGameMainへリダイレクトする場合は、
+        /// この関数をオーバーライドして起動するGameMainのインスタンスを返します。
+        /// </summary>
+        /// <returns>リダイレクトするGameMainがある場合はインスタンスを返しますが、ない場合はnullを返します</returns>
+        protected virtual GameMain Redirect()
+        {
+            // リダイレクト先GameMainはなし
+            return null;
+        }
+
+
+        /// <summary>
+        /// IceMilkTeaのシステムがこのまま継続して起動するかどうかを判断します
+        /// </summary>
+        /// <returns>起動を継続する場合は true を、継続しない場合は false を返します</returns>
+        protected virtual bool Continue()
+        {
+            // 通常は起動を継続する
+            return true;
+        }
+
+
+        /// <summary>
+        /// Unityで動作する同期コンテキストをインストールします。
+        /// もし、同期コンテキストをカスタムでインストールする場合は UninstallSynchronizationContext() 関数で正しくアンインストールしてください
+        /// </summary>
+        protected virtual void InstallSynchronizationContext()
+        {
+        }
+
+
+        /// <summary>
+        /// InstallSynchronizationContext() 関数によってインストールされた同期コンテキストをアンインストールします
+        /// </summary>
+        protected virtual void UninstallSynchronizationContext()
+        {
+        }
+
+
+        /// <summary>
+        /// ゲームの起動処理を行います。
+        /// 主に、ゲームサービスの初期登録や必要な追加モジュールの初期化などを行います。
+        /// </summary>
+        protected virtual void Startup()
+        {
+        }
+
+
+        /// <summary>
+        /// ゲームの終了処理を行います。
+        /// ゲームサービスそのものの終了処理は、サービス側で処理されるべきで、
+        /// この関数では主に、追加モジュールなどの解放やサービス管轄外の解放などを行うべきです。
+        /// </summary>
+        protected virtual void Shutdown()
+        {
+        }
+        #endregion
+
+
         #region オーバーライド可能なゲームループイベント
         protected virtual void MainLoopHead()
         {
@@ -555,17 +589,115 @@ namespace IceMilkTea.Core
 
 
 
+        #region InternalUnityEventBridgeBehaviour
+        /// <summary>
+        /// UnityのMonoBehaviourでしか得られないイベントを引き込むためのコンポーネントクラスです
+        /// </summary>
+        private sealed class InternalUnityEventBridgeBehaviour : MonoBehaviour
+        {
+            // 以下メンバ変数定義
+            private WaitForEndOfFrame waitForEndOfFrame;
+        }
+        #endregion
+
+
+
         #region PlayerLoopSystem用型定義
         /// <summary>
-        /// ゲームサービスマネージャのサービス起動ルーチンを実行する型です
+        /// PlayerLoopSystemに登録する際に必要になる型情報を定義した構造体です
         /// </summary>
-        public struct GameServiceManagerStartup { }
+        private struct ImtGameMainUpdate
+        {
+            /// <summary>
+            /// MainLoopHead 用型定義
+            /// </summary>
+            public struct GameMainMainLoopHead { }
 
+            /// <summary>
+            /// PreFixedUpdate 用型定義
+            /// </summary>
+            public struct GameMainPreFixedUpdate { }
 
-        /// <summary>
-        /// ゲームサービスマネージャのサービス終了ルーチンを実行する型です
-        /// </summary>
-        public struct GameServiceManagerCleanup { }
+            /// <summary>
+            /// PostFixedUpdate 用型定義
+            /// </summary>
+            public struct GameMainPostFixedUpdate { }
+
+            /// <summary>
+            /// PrePhysicsSimulation 用型定義
+            /// </summary>
+            public struct GameMainPrePhysicsSimulation { }
+
+            /// <summary>
+            /// PostPhysicsSimulation 用型定義
+            /// </summary>
+            public struct GameMainPostPhysicsSimulation { }
+
+            /// <summary>
+            /// PreWaitForFixedUpdate 用型定義
+            /// </summary>
+            public struct GameMainPreWaitForFixedUpdate { }
+
+            /// <summary>
+            /// PostWaitForFixedUpdate 用型定義
+            /// </summary>
+            public struct GameMainPostWaitForFixedUpdate { }
+
+            /// <summary>
+            /// PreProcessSynchronizationContext 用型定義
+            /// </summary>
+            public struct GameMainPreProcessSynchronizationContext { }
+
+            /// <summary>
+            /// PostProcessSynchronizationContext 用型定義
+            /// </summary>
+            public struct GameMainPostProcessSynchronizationContext { }
+
+            /// <summary>
+            /// PreUpdate 用型定義
+            /// </summary>
+            public struct GameMainPreUpdate { }
+
+            /// <summary>
+            /// PostUpdate 用型定義
+            /// </summary>
+            public struct GameMainPostUpdate { }
+
+            /// <summary>
+            /// PreAnimation 用型定義
+            /// </summary>
+            public struct GameMainPreAnimation { }
+
+            /// <summary>
+            /// PostAnimation 用型定義
+            /// </summary>
+            public struct GameMainPostAnimation { }
+
+            /// <summary>
+            /// PreLateUpdate 用型定義
+            /// </summary>
+            public struct GameMainPreLateUpdate { }
+
+            /// <summary>
+            /// PostLateUpdate 用型定義
+            /// </summary>
+            public struct GameMainPostLateUpdate { }
+
+            /// <summary>
+            /// PreDrawPresent 用型定義
+            /// </summary>
+            public struct GameMainPreDrawPresent { }
+
+            /// <summary>
+            /// PostDrawPresent 用型定義
+            /// </summary>
+            public struct GameMainPostDrawPresent { }
+
+            /// <summary>
+            /// MainLoopTail 用型定義
+            /// </summary>
+            public struct GameMainMainLoopTail { }
+        }
         #endregion
     }
     #endregion
@@ -610,355 +742,6 @@ namespace IceMilkTea.Core
         protected internal virtual void Shutdown()
         {
         }
-    }
-    #endregion
-
-
-
-    #region Exception and Attribute
-    /// <summary>
-    /// サービスが既に存在している場合にスローされる例外クラスです
-    /// </summary>
-    public class GameServiceAlreadyExistsException : Exception
-    {
-        /// <summary>
-        /// GameServiceAlreadyExistsException インスタンスの初期化をします
-        /// </summary>
-        /// <param name="serviceType">既に存在しているサービスのタイプ</param>
-        /// <param name="baseType">存在しているサービスの基本となるタイプ</param>
-        public GameServiceAlreadyExistsException(Type serviceType, Type baseType) : base($"'{serviceType.Name}'のサービスは既に、'{baseType.Name}'として存在しています")
-        {
-        }
-
-
-        /// <summary>
-        /// GameServiceAlreadyExistsException インスタンスの初期化をします
-        /// </summary>
-        /// <param name="serviceType">既に存在しているサービスのタイプ</param>
-        /// <param name="baseType">存在しているサービスの基本となるタイプ</param>
-        /// <param name="inner">この例外がスローされる原因となったら例外</param>
-        public GameServiceAlreadyExistsException(Type serviceType, Type baseType, Exception inner) : base($"'{serviceType.Name}'のサービスは既に、'{baseType.Name}'として存在しています", inner)
-        {
-        }
-    }
-
-
-
-    /// <summary>
-    /// サービスが見つからなかった場合にスローされる例外クラスです
-    /// </summary>
-    public class GameServiceNotFoundException : Exception
-    {
-        /// <summary>
-        /// GameServiceNotFoundException インスタンスの初期化をします
-        /// </summary>
-        /// <param name="serviceType">見つけられなかったサービスのタイプ</param>
-        public GameServiceNotFoundException(Type serviceType) : base($"'{serviceType.Name}'のサービスを見つけられませんでした")
-        {
-        }
-
-
-        /// <summary>
-        /// GameServiceNotFoundException インスタンスの初期化をします
-        /// </summary>
-        /// <param name="serviceType">見つけられなかったサービスのタイプ</param>
-        /// <param name="inner">この例外がスローされる原因となった例外</param>
-        public GameServiceNotFoundException(Type serviceType, Exception inner) : base($"'{serviceType.Name}'のサービスを見つけられませんでした", inner)
-        {
-        }
-    }
-
-
-
-    /// <summary>
-    /// GameMain クラスのアセット生成ツールメニューの非表示を示す属性クラスです
-    /// </summary>
-    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
-    public class HideCreateGameMainAssetMenuAttribute : Attribute
-    {
-    }
-    #endregion
-
-
-
-    #region Definitions
-    /// <summary>
-    /// 起動するべきGameMainが見つからなかった場合や、起動できない場合において
-    /// 代わりに起動するための GameMain クラスです。
-    /// </summary>
-    [HideCreateGameMainAssetMenu]
-    internal class SafeGameMain : GameMain
-    {
-        /// <summary>
-        /// セーフ起動時のIceMilkTeaは、起動を継続しないようにします。
-        /// </summary>
-        /// <returns>この関数は常にfalseを返します</returns>
-        protected override bool Continue()
-        {
-            // 起動を止めるようにする
-            return false;
-        }
-    }
-
-
-
-    /// <summary>
-    /// ゲームサービスが動作を開始するための情報を保持する構造体です
-    /// </summary>
-    public struct GameServiceStartupInfo
-    {
-        /// <summary>
-        /// サービスが更新処理として必要としている更新関数テーブル
-        /// </summary>
-        public Dictionary<GameServiceUpdateTiming, Action> UpdateFunctionTable { get; set; }
-    }
-
-
-
-    /// <summary>
-    /// ゲームが終了要求に対する答えを表します
-    /// </summary>
-    public enum GameShutdownAnswer
-    {
-        /// <summary>
-        /// ゲームが終了することを許可します
-        /// </summary>
-        Approve,
-
-        /// <summary>
-        /// ゲームが終了することを拒否します
-        /// </summary>
-        Reject,
-    }
-
-
-
-    /// <summary>
-    /// PlayerLoopSystemに登録する際に必要になる型情報を定義したGameService用構造体です
-    /// </summary>
-    public struct GameServiceUpdate
-    {
-        /// <summary>
-        /// MainLoopHead 用型定義
-        /// </summary>
-        public struct GameServiceMainLoopHead { }
-
-        /// <summary>
-        /// PreFixedUpdate 用型定義
-        /// </summary>
-        public struct GameServicePreFixedUpdate { }
-
-        /// <summary>
-        /// PostFixedUpdate 用型定義
-        /// </summary>
-        public struct GameServicePostFixedUpdate { }
-
-        /// <summary>
-        /// PostPhysicsSimulation 用型定義
-        /// </summary>
-        public struct GameServicePostPhysicsSimulation { }
-
-        /// <summary>
-        /// PostWaitForFixedUpdate 用型定義
-        /// </summary>
-        public struct GameServicePostWaitForFixedUpdate { }
-
-        /// <summary>
-        /// PreProcessSynchronizationContext 用型定義
-        /// </summary>
-        public struct GameServicePreProcessSynchronizationContext { }
-
-        /// <summary>
-        /// PostProcessSynchronizationContext 用型定義
-        /// </summary>
-        public struct GameServicePostProcessSynchronizationContext { }
-
-        /// <summary>
-        /// PreUpdate 用型定義
-        /// </summary>
-        public struct GameServicePreUpdate { }
-
-        /// <summary>
-        /// PostUpdate 用型定義
-        /// </summary>
-        public struct GameServicePostUpdate { }
-
-        /// <summary>
-        /// PreAnimation 用型定義
-        /// </summary>
-        public struct GameServicePreAnimation { }
-
-        /// <summary>
-        /// PostAnimation 用型定義
-        /// </summary>
-        public struct GameServicePostAnimation { }
-
-        /// <summary>
-        /// PreLateUpdate 用型定義
-        /// </summary>
-        public struct GameServicePreLateUpdate { }
-
-        /// <summary>
-        /// PostLateUpdate 用型定義
-        /// </summary>
-        public struct GameServicePostLateUpdate { }
-
-        /// <summary>
-        /// PreDrawPresent 用型定義
-        /// </summary>
-        public struct GameServicePreDrawPresent { }
-
-        /// <summary>
-        /// PostDrawPresent 用型定義
-        /// </summary>
-        public struct GameServicePostDrawPresent { }
-
-        /// <summary>
-        /// MainLoopTail 用型定義
-        /// </summary>
-        public struct GameServiceMainLoopTail { }
-    }
-
-
-
-    /// <summary>
-    /// サービスが動作するための更新タイミングを表します
-    /// </summary>
-    [Flags]
-    public enum GameServiceUpdateTiming : UInt32
-    {
-        /// <summary>
-        /// メインループ最初のタイミング。
-        /// ただし、Time.frameCountや入力情報の更新直後となります。
-        /// </summary>
-        MainLoopHead = (1 << 0),
-
-        /// <summary>
-        /// MonoBehaviour.FixedUpdate直前のタイミング
-        /// </summary>
-        PreFixedUpdate = (1 << 1),
-
-        /// <summary>
-        /// MonoBehaviour.FixedUpdate直後のタイミング
-        /// </summary>
-        PostFixedUpdate = (1 << 2),
-
-        /// <summary>
-        /// 物理シミュレーション直後のタイミング。
-        /// ただし、シミュレーションによる物理イベントキューが全て処理された直後となります。
-        /// </summary>
-        PostPhysicsSimulation = (1 << 3),
-
-        /// <summary>
-        /// WaitForFixedUpdate直後のタイミング。
-        /// </summary>
-        PostWaitForFixedUpdate = (1 << 4),
-
-        /// <summary>
-        /// UnitySynchronizationContextにPostされた関数キューが処理される直前のタイミング
-        /// </summary>
-        PreProcessSynchronizationContext = (1 << 5),
-
-        /// <summary>
-        /// UnitySynchronizationContextにPostされた関数キューが処理された直後のタイミング
-        /// </summary>
-        PostProcessSynchronizationContext = (1 << 6),
-
-        /// <summary>
-        /// MonoBehaviour.Update直前のタイミング
-        /// </summary>
-        PreUpdate = (1 << 7),
-
-        /// <summary>
-        /// MonoBehaviour.Update直後のタイミング
-        /// </summary>
-        PostUpdate = (1 << 8),
-
-        /// <summary>
-        /// UnityのAnimator(UpdateMode=Normal)によるポージング処理される直前のタイミング
-        /// </summary>
-        PreAnimation = (1 << 9),
-
-        /// <summary>
-        /// UnityのAnimator(UpdateMode=Normal)によるポージング処理された直後のタイミング
-        /// </summary>
-        PostAnimation = (1 << 10),
-
-        /// <summary>
-        /// MonoBehaviour.LateUpdate直前のタイミング
-        /// </summary>
-        PreLateUpdate = (1 << 11),
-
-        /// <summary>
-        /// MonoBehaviour.LateUpdate直後のタイミング
-        /// </summary>
-        PostLateUpdate = (1 << 12),
-
-        /// <summary>
-        /// メインスレッドにおける描画デバイスのPresentする直前のタイミング
-        /// </summary>
-        PreDrawPresent = (1 << 13),
-
-        /// <summary>
-        /// メインスレッドにおける描画デバイスのPresentされた直後のタイミング
-        /// </summary>
-        PostDrawPresent = (1 << 14),
-
-        /// <summary>
-        /// メインループの最後のタイミング。
-        /// </summary>
-        MainLoopTail = (1 << 15),
-
-        /// <summary>
-        /// Unityプレイヤーのフォーカスが得られたときのタイミング。
-        /// OnApplicationFocus(true)。
-        /// </summary>
-        OnApplicationFocusIn = (1 << 16),
-
-        /// <summary>
-        /// Unityプレイヤーのフォーカスが失われたときのタイミング。
-        /// OnApplicationFocus(false)。
-        /// </summary>
-        OnApplicationFocusOut = (1 << 17),
-
-        /// <summary>
-        /// Unityプレイヤーのメインループが一時停止したときのタイミング。
-        /// OnApplicationPause(true)。
-        /// </summary>
-        OnApplicationSuspend = (1 << 18),
-
-        /// <summary>
-        /// Unityプレイヤーのメインループが再開したときのタイミング。
-        /// OnApplicationPause(false)。
-        /// </summary>
-        OnApplicationResume = (1 << 19),
-
-        /// <summary>
-        /// あらゆるカメラのカリングが行われる直前のタイミング。
-        /// ただし、カメラが存在する数分１フレームで複数回呼び出される可能性があります。
-        /// さらに、スレッドはメインスレッド上におけるタイミングとなります。
-        /// </summary>
-        CameraPreCulling = (1 << 20),
-
-        /// <summary>
-        /// あらゆるカメラのレンダリングが行われる直前のタイミング。
-        /// ただし、カメラが存在する数分１フレームで複数回呼び出される可能性があります。
-        /// さらに、スレッドはメインスレッド上におけるタイミングとなります。
-        /// </summary>
-        CameraPreRendering = (1 << 21),
-
-        /// <summary>
-        /// あらゆるカメラのレンダリングが行われた直後のタイミング。
-        /// ただし、カメラが存在する数分１フレームで複数回呼び出される可能性があります。
-        /// さらに、スレッドはメインスレッド上におけるタイミングとなります。
-        /// </summary>
-        CameraPostRendering = (1 << 22),
-
-        /// <summary>
-        /// UnityプレイヤーのWaitForEndOfFrameの継続するタイミング。
-        /// {yield return endOfFrame; OnEndOfFrame;}
-        /// </summary>
-        OnEndOfFrame = (1 << 23),
     }
     #endregion
 
@@ -1736,6 +1519,267 @@ namespace IceMilkTea.Core
             return serviceType;
         }
         #endregion
+    }
+    #endregion
+
+
+
+    #region Exception and Attribute
+    /// <summary>
+    /// サービスが既に存在している場合にスローされる例外クラスです
+    /// </summary>
+    public class GameServiceAlreadyExistsException : Exception
+    {
+        /// <summary>
+        /// GameServiceAlreadyExistsException インスタンスの初期化をします
+        /// </summary>
+        /// <param name="serviceType">既に存在しているサービスのタイプ</param>
+        /// <param name="baseType">存在しているサービスの基本となるタイプ</param>
+        public GameServiceAlreadyExistsException(Type serviceType, Type baseType) : base($"'{serviceType.Name}'のサービスは既に、'{baseType.Name}'として存在しています")
+        {
+        }
+
+
+        /// <summary>
+        /// GameServiceAlreadyExistsException インスタンスの初期化をします
+        /// </summary>
+        /// <param name="serviceType">既に存在しているサービスのタイプ</param>
+        /// <param name="baseType">存在しているサービスの基本となるタイプ</param>
+        /// <param name="inner">この例外がスローされる原因となったら例外</param>
+        public GameServiceAlreadyExistsException(Type serviceType, Type baseType, Exception inner) : base($"'{serviceType.Name}'のサービスは既に、'{baseType.Name}'として存在しています", inner)
+        {
+        }
+    }
+
+
+
+    /// <summary>
+    /// サービスが見つからなかった場合にスローされる例外クラスです
+    /// </summary>
+    public class GameServiceNotFoundException : Exception
+    {
+        /// <summary>
+        /// GameServiceNotFoundException インスタンスの初期化をします
+        /// </summary>
+        /// <param name="serviceType">見つけられなかったサービスのタイプ</param>
+        public GameServiceNotFoundException(Type serviceType) : base($"'{serviceType.Name}'のサービスを見つけられませんでした")
+        {
+        }
+
+
+        /// <summary>
+        /// GameServiceNotFoundException インスタンスの初期化をします
+        /// </summary>
+        /// <param name="serviceType">見つけられなかったサービスのタイプ</param>
+        /// <param name="inner">この例外がスローされる原因となった例外</param>
+        public GameServiceNotFoundException(Type serviceType, Exception inner) : base($"'{serviceType.Name}'のサービスを見つけられませんでした", inner)
+        {
+        }
+    }
+
+
+
+    /// <summary>
+    /// GameMain クラスのアセット生成ツールメニューの非表示を示す属性クラスです
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
+    public class HideCreateGameMainAssetMenuAttribute : Attribute
+    {
+    }
+    #endregion
+
+
+
+    #region Definitions
+    /// <summary>
+    /// 起動するべきGameMainが見つからなかった場合や、起動できない場合において
+    /// 代わりに起動するための GameMain クラスです。
+    /// </summary>
+    [HideCreateGameMainAssetMenu]
+    internal class SafeGameMain : GameMain
+    {
+        /// <summary>
+        /// セーフ起動時のIceMilkTeaは、起動を継続しないようにします。
+        /// </summary>
+        /// <returns>この関数は常にfalseを返します</returns>
+        protected override bool Continue()
+        {
+            // 起動を止めるようにする
+            return false;
+        }
+    }
+
+
+
+    /// <summary>
+    /// ゲームサービスが動作を開始するための情報を保持する構造体です
+    /// </summary>
+    public struct GameServiceStartupInfo
+    {
+        /// <summary>
+        /// サービスが更新処理として必要としている更新関数テーブル
+        /// </summary>
+        public Dictionary<GameServiceUpdateTiming, Action> UpdateFunctionTable { get; set; }
+    }
+
+
+
+    /// <summary>
+    /// ゲームが終了要求に対する答えを表します
+    /// </summary>
+    public enum GameShutdownAnswer
+    {
+        /// <summary>
+        /// ゲームが終了することを許可します
+        /// </summary>
+        Approve,
+
+        /// <summary>
+        /// ゲームが終了することを拒否します
+        /// </summary>
+        Reject,
+    }
+
+
+
+    /// <summary>
+    /// サービスが動作するための更新タイミングを表します
+    /// </summary>
+    [Flags]
+    public enum GameServiceUpdateTiming : UInt32
+    {
+        /// <summary>
+        /// メインループ最初のタイミング。
+        /// ただし、Time.frameCountや入力情報の更新直後となります。
+        /// </summary>
+        MainLoopHead = (1 << 0),
+
+        /// <summary>
+        /// MonoBehaviour.FixedUpdate直前のタイミング
+        /// </summary>
+        PreFixedUpdate = (1 << 1),
+
+        /// <summary>
+        /// MonoBehaviour.FixedUpdate直後のタイミング
+        /// </summary>
+        PostFixedUpdate = (1 << 2),
+
+        /// <summary>
+        /// 物理シミュレーション直後のタイミング。
+        /// ただし、シミュレーションによる物理イベントキューが全て処理された直後となります。
+        /// </summary>
+        PostPhysicsSimulation = (1 << 3),
+
+        /// <summary>
+        /// WaitForFixedUpdate直後のタイミング。
+        /// </summary>
+        PostWaitForFixedUpdate = (1 << 4),
+
+        /// <summary>
+        /// UnitySynchronizationContextにPostされた関数キューが処理される直前のタイミング
+        /// </summary>
+        PreProcessSynchronizationContext = (1 << 5),
+
+        /// <summary>
+        /// UnitySynchronizationContextにPostされた関数キューが処理された直後のタイミング
+        /// </summary>
+        PostProcessSynchronizationContext = (1 << 6),
+
+        /// <summary>
+        /// MonoBehaviour.Update直前のタイミング
+        /// </summary>
+        PreUpdate = (1 << 7),
+
+        /// <summary>
+        /// MonoBehaviour.Update直後のタイミング
+        /// </summary>
+        PostUpdate = (1 << 8),
+
+        /// <summary>
+        /// UnityのAnimator(UpdateMode=Normal)によるポージング処理される直前のタイミング
+        /// </summary>
+        PreAnimation = (1 << 9),
+
+        /// <summary>
+        /// UnityのAnimator(UpdateMode=Normal)によるポージング処理された直後のタイミング
+        /// </summary>
+        PostAnimation = (1 << 10),
+
+        /// <summary>
+        /// MonoBehaviour.LateUpdate直前のタイミング
+        /// </summary>
+        PreLateUpdate = (1 << 11),
+
+        /// <summary>
+        /// MonoBehaviour.LateUpdate直後のタイミング
+        /// </summary>
+        PostLateUpdate = (1 << 12),
+
+        /// <summary>
+        /// メインスレッドにおける描画デバイスのPresentする直前のタイミング
+        /// </summary>
+        PreDrawPresent = (1 << 13),
+
+        /// <summary>
+        /// メインスレッドにおける描画デバイスのPresentされた直後のタイミング
+        /// </summary>
+        PostDrawPresent = (1 << 14),
+
+        /// <summary>
+        /// メインループの最後のタイミング。
+        /// </summary>
+        MainLoopTail = (1 << 15),
+
+        /// <summary>
+        /// Unityプレイヤーのフォーカスが得られたときのタイミング。
+        /// OnApplicationFocus(true)。
+        /// </summary>
+        OnApplicationFocusIn = (1 << 16),
+
+        /// <summary>
+        /// Unityプレイヤーのフォーカスが失われたときのタイミング。
+        /// OnApplicationFocus(false)。
+        /// </summary>
+        OnApplicationFocusOut = (1 << 17),
+
+        /// <summary>
+        /// Unityプレイヤーのメインループが一時停止したときのタイミング。
+        /// OnApplicationPause(true)。
+        /// </summary>
+        OnApplicationSuspend = (1 << 18),
+
+        /// <summary>
+        /// Unityプレイヤーのメインループが再開したときのタイミング。
+        /// OnApplicationPause(false)。
+        /// </summary>
+        OnApplicationResume = (1 << 19),
+
+        /// <summary>
+        /// あらゆるカメラのカリングが行われる直前のタイミング。
+        /// ただし、カメラが存在する数分１フレームで複数回呼び出される可能性があります。
+        /// さらに、スレッドはメインスレッド上におけるタイミングとなります。
+        /// </summary>
+        CameraPreCulling = (1 << 20),
+
+        /// <summary>
+        /// あらゆるカメラのレンダリングが行われる直前のタイミング。
+        /// ただし、カメラが存在する数分１フレームで複数回呼び出される可能性があります。
+        /// さらに、スレッドはメインスレッド上におけるタイミングとなります。
+        /// </summary>
+        CameraPreRendering = (1 << 21),
+
+        /// <summary>
+        /// あらゆるカメラのレンダリングが行われた直後のタイミング。
+        /// ただし、カメラが存在する数分１フレームで複数回呼び出される可能性があります。
+        /// さらに、スレッドはメインスレッド上におけるタイミングとなります。
+        /// </summary>
+        CameraPostRendering = (1 << 22),
+
+        /// <summary>
+        /// UnityプレイヤーのWaitForEndOfFrameの継続するタイミング。
+        /// {yield return endOfFrame; OnEndOfFrame;}
+        /// </summary>
+        OnEndOfFrame = (1 << 23),
     }
     #endregion
 
@@ -2590,231 +2634,6 @@ namespace IceMilkTea.Core
                 // 解放済み例外を投げる
                 throw new ObjectDisposedException(null);
             }
-        }
-    }
-    #endregion
-
-
-
-    #region InternalHandlingBehaviour
-    /// <summary>
-    /// UnityのMonoBehaviourでしか得られないイベントを引き込むためのコンポーネントクラスです
-    /// </summary>
-    internal class MonoBehaviourEventBridge : MonoBehaviour
-    {
-        // 以下メンバ変数定義
-        private WaitForEndOfFrame waitForEndOfFrame;
-        private Action<bool> onApplicationFocusFunction;
-        private Action<bool> onApplicationPauseFunction;
-        private Action onEndOfFrame;
-
-
-
-        /// <summary>
-        /// 対象のゲームオブジェクトに MonoBehaviourEventBridge コンポーネントを新規アタッチを行い初期化を行います
-        /// </summary>
-        /// <param name="targetGameObject">アタッチする対象のゲームオブジェクト</param>
-        /// <returns>新規でアタッチした MonoBehaviourEventBridge のインスタンスを返します</returns>
-        /// <exception cref="ArgumentNullException">targetGameObject が null です</exception>
-        public static MonoBehaviourEventBridge Attach(GameObject targetGameObject)
-        {
-            // nullなゲームオブジェクトを渡されたら
-            if (targetGameObject == null)
-            {
-                // そんなことは許さない
-                throw new ArgumentNullException(nameof(targetGameObject));
-            }
-
-
-            // 自身をアタッチして初期化をする
-            var component = targetGameObject.AddComponent<MonoBehaviourEventBridge>();
-            component.waitForEndOfFrame = new WaitForEndOfFrame();
-            component.onApplicationFocusFunction = new Action<bool>(_ => { });
-            component.onApplicationPauseFunction = new Action<bool>(_ => { });
-            component.onEndOfFrame = new Action(() => { });
-
-
-            // コルーチンを開始する
-            component.StartCoroutine(component.DoEndOfFrameLoop());
-
-
-            // インスペクタから姿を消して返す
-            component.hideFlags = HideFlags.HideInInspector;
-            return component;
-        }
-
-
-        /// <summary>
-        /// OnApplicationFocusを実行する関数を設定します
-        /// </summary>
-        /// <param name="focusFunction">OnApplicationFocusを実行する関数</param>
-        /// <exception cref="ArgumentNullException">focusFunction が null です</exception>
-        public void SetApplicationFocusFunction(Action<bool> focusFunction)
-        {
-            // null が渡されたら
-            if (focusFunction == null)
-            {
-                // 許さない
-                throw new ArgumentNullException(nameof(focusFunction));
-            }
-
-
-            // 新しい関数を受け取る
-            onApplicationFocusFunction = focusFunction;
-        }
-
-
-        /// <summary>
-        /// OnApplicationPauseを実行する関数を設定します
-        /// </summary>
-        /// <param name="pauseFunction">OnApplicationPauseを実行する関数</param>
-        /// <exception cref="ArgumentNullException">pauseFunction が null です</exception>
-        public void SetApplicationPauseFunction(Action<bool> pauseFunction)
-        {
-            // null が渡されたら
-            if (pauseFunction == null)
-            {
-                // 許さない
-                throw new ArgumentNullException(nameof(pauseFunction));
-            }
-
-
-            // 新しい関数を受け取る
-            onApplicationPauseFunction = pauseFunction;
-        }
-
-
-        /// <summary>
-        /// WaitForEndOfFrameの継続関数を設定します
-        /// </summary>
-        /// <param name="endOfFrameFunction">WaitForEndOfFrameの継続を行う関数</param>
-        /// <exception cref="ArgumentNullException">endOfFrameFunction が null です</exception>
-        public void SetEndOfFrameFunction(Action endOfFrameFunction)
-        {
-            // null が渡されたら
-            if (endOfFrameFunction == null)
-            {
-                // 許さない
-                throw new ArgumentNullException(nameof(endOfFrameFunction));
-            }
-
-
-            // 新しい関数を受け取る
-            onEndOfFrame = endOfFrameFunction;
-        }
-
-
-        /// <summary>
-        /// コンポーネントが破棄される時の処理を実行します
-        /// </summary>
-        private void OnDestroy()
-        {
-            // 関数の参照を殺す
-            onApplicationFocusFunction = null;
-            onApplicationPauseFunction = null;
-            onEndOfFrame = null;
-        }
-
-
-        /// <summary>
-        /// ゲームアプリケーションがウィンドウなどプレイヤーのフォーカスの状態が変化したときの処理を行います
-        /// </summary>
-        /// <param name="focus">フォーカスを得られたときはtrueを、失ったときはfalse</param>
-        private void OnApplicationFocus(bool focus)
-        {
-            // 本来実行したい関数を叩く
-            onApplicationFocusFunction(focus);
-        }
-
-
-        /// <summary>
-        /// ゲームアプリケーションの再生状態が変化したときの処理を行います
-        /// </summary>
-        /// <param name="pause">一時停止になったときはtrueを、再生状態になったときはfalse</param>
-        private void OnApplicationPause(bool pause)
-        {
-            // 本来実行したい関数を叩く
-            onApplicationPauseFunction(pause);
-        }
-
-
-        /// <summary>
-        /// UnityのWaitForEndOfFrameの処理を永遠に実行し続けます
-        /// </summary>
-        /// <returns>WaitForEndOfFrame のインスタンスを常に返し続けます</returns>
-        private IEnumerator DoEndOfFrameLoop()
-        {
-            // 無限ループ
-            while (true)
-            {
-                // フレームの終端まで待機（描画の終端でゲームループの終端ではない）して関数を叩く
-                yield return waitForEndOfFrame;
-                onEndOfFrame();
-            }
-        }
-    }
-    #endregion
-
-
-
-    #region Utility
-    /// <summary>
-    /// Unity関連実装でユーティリティな関数として使えるような、関数が実装されているクラスです
-    /// </summary>
-    public static class ImtUnityUtility
-    {
-        /// <summary>
-        /// 永続的に存在し続けるゲームオブジェクトを生成します。
-        /// この関数で生成されるゲームオブジェクトはヒエラルキに表示されません。
-        /// また、名前はNewGameObjectとして作られます。
-        /// </summary>
-        /// <returns>生成された永続ゲームオブジェクトを返します</returns>
-        public static GameObject CreatePersistentGameObject()
-        {
-            // "NewGameObject" な見えないゲームオブジェクトを生成して返す
-            return CreatePersistentGameObject("NewGameObject", HideFlags.HideInHierarchy);
-        }
-
-
-        /// <summary>
-        /// 永続的に存在し続けるゲームオブジェクトを生成します。
-        /// この関数で生成されるゲームオブジェクトはヒエラルキに表示されません。
-        /// </summary>
-        /// <param name="name">生成する永続ゲームオブジェクトの名前</param>
-        /// <returns>生成された永続ゲームオブジェクトを返します</returns>
-        public static GameObject CreatePersistentGameObject(string name)
-        {
-            // 見えないゲームオブジェクトを生成して返す
-            return CreatePersistentGameObject(name, HideFlags.HideInHierarchy);
-        }
-
-
-        /// <summary>
-        /// 永続的に存在し続けるゲームオブジェクトを生成します。
-        /// </summary>
-        /// <param name="name">生成する永続ゲームオブジェクトの名前</param>
-        /// <param name="hideFlags">生成する永続ゲームオブジェクトの隠しフラグ</param>
-        /// <returns>生成された永続ゲームオブジェクトを返します</returns>
-        public static GameObject CreatePersistentGameObject(string name, HideFlags hideFlags)
-        {
-            // ゲームオブジェクトを生成する
-            var gameObject = new GameObject(name);
-
-
-            // ヒエラルキから姿を消して永続化
-            gameObject.hideFlags = hideFlags;
-            UnityEngine.Object.DontDestroyOnLoad(gameObject);
-
-
-            // トランスフォームを取得して念の為初期値を入れる
-            var transform = gameObject.GetComponent<Transform>();
-            transform.position = Vector3.zero;
-            transform.rotation = Quaternion.identity;
-            transform.localScale = Vector3.one;
-
-
-            // 作ったゲームオブジェクトを返す
-            return gameObject;
         }
     }
     #endregion
