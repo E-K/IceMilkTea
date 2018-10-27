@@ -15,12 +15,17 @@
 
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Linq;
+using System.Text;
+using System.Threading;
 using UnityEngine;
+using UnityEngine.Experimental.LowLevel;
 using UnityEngine.Experimental.PlayerLoop;
 
 namespace IceMilkTea.Core
 {
-    #region GameMain本体
+    #region GameMain (EntryPoint)
     /// <summary>
     /// ゲームメインクラスの実装をするための抽象クラスです。
     /// IceMilkTeaによるゲームのスタートアップからメインループを構築する場合は必ず継承し実装をして下さい。
@@ -273,45 +278,336 @@ namespace IceMilkTea.Core
 
 
 
+    #region GameService
     /// <summary>
-    /// GameMain クラスのアセット生成ツールメニューの非表示を示す属性クラスです
+    /// ゲームのサブシステムをサービスとして提供するための基本クラスです。
+    /// ゲームのサブシステムを実装する場合は、このクラスを継承し適切な振る舞いを実装してください。
     /// </summary>
-    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
-    public class HideCreateGameMainAssetMenuAttribute : Attribute
-    {
-    }
-
-
-
-    /// <summary>
-    /// 起動するべきGameMainが見つからなかった場合や、起動できない場合において
-    /// 代わりに起動するための GameMain クラスです。
-    /// </summary>
-    [HideCreateGameMainAssetMenu]
-    internal class SafeGameMain : GameMain
+    public abstract class GameService
     {
         /// <summary>
-        /// セーフ起動時のIceMilkTeaは、起動を継続しないようにします。
+        /// サービスを起動します。
         /// </summary>
-        /// <returns>この関数は常にfalseを返します</returns>
-        protected override bool Continue()
+        /// <param name="info">サービスが起動する時に必要とする情報を設定します</param>
+        protected internal virtual void Startup(out GameServiceStartupInfo info)
         {
-            // 起動を止めるようにする
-            return false;
+            // 特に何もしない起動情報を設定して修了
+            info = new GameServiceStartupInfo()
+            {
+                UpdateFunctionTable = null,
+            };
         }
-    }
 
 
+        /// <summary>
+        /// ゲームアプリケーションが終了することを許可するかどうかを判断します。
+        /// </summary>
+        /// <returns>アプリケーションが終了することを許可する場合は GameShutdownAnswer.Approve を、許可しない場合は GameShutdownAnswer.Reject を返します</returns>
+        protected internal virtual GameShutdownAnswer JudgeGameShutdown()
+        {
+            // 通常は許可をする
+            return GameShutdownAnswer.Approve;
+        }
 
-    #region PlayerLoopSystem用型定義
-    public struct ImtGameSystemUpdate
-    {
+
+        /// <summary>
+        /// サービスをシャットダウンします
+        /// </summary>
+        protected internal virtual void Shutdown()
+        {
+        }
     }
     #endregion
 
 
 
-    #region Exception定義
+    #region ImtSynchronizationContext
+    /// <summary>
+    /// IceMilkTea 自身が提供する同期コンテキストクラスです。
+    /// 独立したスレッドの同期コンテキストとして利用したり、特定コード範囲の同期コンテキストとして利用出来ます。
+    /// </summary>
+    public class ImtSynchronizationContext : SynchronizationContext, IDisposable
+    {
+        /// <summary>
+        /// 同期コンテキストに送られてきたコールバックを、メッセージとして保持する構造体です。
+        /// </summary>
+        private struct Message
+        {
+            // メンバ変数定義
+            private SendOrPostCallback callback;
+            private ManualResetEvent waitHandle;
+            private object state;
+
+
+
+            /// <summary>
+            /// Message のインスタンスを初期化します。
+            /// </summary>
+            /// <param name="callback">呼び出すべきコールバック関数</param>
+            /// <param name="state">コールバックに渡すオブジェクト</param>
+            /// <param name="waitHandle">コールバックの呼び出しを待機するために、利用する待機ハンドル</param>
+            public Message(SendOrPostCallback callback, object state, ManualResetEvent waitHandle)
+            {
+                // メンバの初期化
+                this.callback = callback;
+                this.waitHandle = waitHandle;
+                this.state = state;
+            }
+
+
+            /// <summary>
+            /// メッセージに設定されたコールバックを呼び出します。
+            /// また、待機ハンドルが設定されている場合は、待機ハンドルのシグナルを設定します。
+            /// </summary>
+            public void Invoke()
+            {
+                // コールバックを叩く
+                callback(state);
+
+
+                // もし待機ハンドルがあるなら
+                if (waitHandle != null)
+                {
+                    // シグナルを設定する
+                    waitHandle.Set();
+                }
+            }
+
+
+            /// <summary>
+            /// このメッセージを管理していた同期コンテキストが、何かの理由で管理できなくなった場合
+            /// このメッセージを指定された同期コンテキストに、再ポストします。
+            /// また、送信メッセージの場合は、直ちに処理され待機ハンドルのシグナルが設定されます。
+            /// </summary>
+            /// <param name="rePostTargetContext">再ポスト先の同期コンテキスト</param>
+            public void Failover(SynchronizationContext rePostTargetContext)
+            {
+                // 待機ハンドルが存在するなら
+                if (waitHandle != null)
+                {
+                    // コールバックを叩いてシグナルを設定する
+                    callback(state);
+                    waitHandle.Set();
+                    return;
+                }
+
+
+                // 再ポスト先同期コンテキストにポストする
+                rePostTargetContext.Post(callback, state);
+            }
+        }
+
+
+
+        // 定数定義
+        public const int DefaultMessageQueueCapacity = 32;
+
+        // メンバ変数定義
+        private SynchronizationContext previousContext;
+        private Queue<Message> messageQueue;
+        private int myStartupThreadId;
+        private bool disposed;
+
+
+
+        /// <summary>
+        /// ImtSynchronizationContext のインスタンスを初期化します。
+        /// </summary>
+        /// <remarks>
+        /// この同期コンテキストは messagePumpHandler が呼び出されない限りメッセージを蓄え続けます。
+        /// メッセージを処理するためには、必ず messagePumpHandler を定期的に呼び出してください。
+        /// </remarks>
+        /// <param name="messagePumpHandler">この同期コンテキストに送られてきたメッセージを処理するための、メッセージポンプハンドラを受け取ります</param>
+        public ImtSynchronizationContext(out Action messagePumpHandler)
+        {
+            // メンバの初期化と、メッセージ処理関数を伝える
+            previousContext = AsyncOperationManager.SynchronizationContext;
+            messageQueue = new Queue<Message>(DefaultMessageQueueCapacity);
+            myStartupThreadId = Thread.CurrentThread.ManagedThreadId;
+            messagePumpHandler = DoProcessMessage;
+        }
+
+
+        /// <summary>
+        /// ImtSynchronizationContext のファイナライザです。
+        /// </summary>
+        ~ImtSynchronizationContext()
+        {
+            // ファイナライザからのDispose呼び出し
+            Dispose(false);
+        }
+
+
+        /// <summary>
+        /// リソースを解放します。また、解放する際にメッセージが残っていた場合は
+        /// この同期コンテキストが生成される前に存在していた、同期コンテキストに再ポストされ、同期コンテキストが再設定されます。
+        /// </summary>
+        public void Dispose()
+        {
+            // DisposeからのDispose呼び出し
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+
+        /// <summary>
+        /// 実際のリソース解放を行います。
+        /// </summary>
+        /// <param name="disposing">マネージ解放の場合は true を、アンマネージ解放なら false を指定</param>
+        protected virtual void Dispose(bool disposing)
+        {
+            // 既に解放済みなら
+            if (disposed)
+            {
+                // 終了
+                return;
+            }
+
+
+            // もし現在の同期コンテキストが自身なら
+            if (AsyncOperationManager.SynchronizationContext == this)
+            {
+                // 同期コンテキストを、インスタンス生成時に覚えたコンテキストに戻す
+                AsyncOperationManager.SynchronizationContext = previousContext;
+            }
+
+
+            // メッセージキューをロック
+            lock (messageQueue)
+            {
+                // 全てのメッセージを処理するまでループ
+                while (messageQueue.Count > 0)
+                {
+                    // 一つ前の同期コンテキストにフェイルオーバーする
+                    messageQueue.Dequeue().Failover(previousContext);
+                }
+            }
+
+
+            // 解放済みマーク
+            disposed = true;
+        }
+
+
+        /// <summary>
+        /// ImtSynchronizationContext のインスタンスを生成と同時に、同期コンテキストの設定も行います。
+        /// </summary>
+        /// <param name="messagePumpHandler">コンストラクタの messagePumpHandler に渡す参照</param>
+        /// <returns>インスタンスの生成と設定が終わった、同期コンテキストを返します。</returns>
+        public static ImtSynchronizationContext Install(out Action messagePumpHandler)
+        {
+            // 新しい同期コンテキストのインスタンスを生成して、設定した後に返す
+            var context = new ImtSynchronizationContext(out messagePumpHandler);
+            AsyncOperationManager.SynchronizationContext = context;
+            return context;
+        }
+
+
+        /// <summary>
+        /// 同期メッセージを送信します。
+        /// </summary>
+        /// <param name="callback">呼び出すべきメッセージのコールバック</param>
+        /// <param name="state">コールバックに渡してほしいオブジェクト</param>
+        /// <exception cref="ObjectDisposedException">既にオブジェクトが解放済みです</exception>
+        public override void Send(SendOrPostCallback callback, object state)
+        {
+            // 解放済み例外送出関数を叩く
+            ThrowIfDisposed();
+
+
+            // 同じスレッドからの送信なら
+            if (Thread.CurrentThread.ManagedThreadId == myStartupThreadId)
+            {
+                // 直ちにコールバックを叩いて終了
+                callback(state);
+                return;
+            }
+
+
+            // メッセージ処理待ち用同期プリミティブを用意
+            using (var waitHandle = new ManualResetEvent(false))
+            {
+                // メッセージキューをロック
+                lock (messageQueue)
+                {
+                    // 処理して欲しいコールバックを登録
+                    messageQueue.Enqueue(new Message(callback, state, waitHandle));
+                }
+
+
+                // 登録したコールバックが処理されるまで待機
+                waitHandle.WaitOne();
+            }
+        }
+
+
+        /// <summary>
+        /// 非同期メッセージをポストします。
+        /// </summary>
+        /// <param name="callback">呼び出すべきメッセージのコールバック</param>
+        /// <param name="state">コールバックに渡してほしいオブジェクト</param>
+        /// <exception cref="ObjectDisposedException">既にオブジェクトが解放済みです</exception>
+        public override void Post(SendOrPostCallback callback, object state)
+        {
+            // 解放済み例外送出関数を叩く
+            ThrowIfDisposed();
+
+
+            // メッセージキューをロック
+            lock (messageQueue)
+            {
+                // 処理して欲しいコールバックを登録
+                messageQueue.Enqueue(new Message(callback, state, null));
+            }
+        }
+
+
+        /// <summary>
+        /// 同期コンテキストに、送られてきたメッセージを処理します。
+        /// </summary>
+        /// <exception cref="ObjectDisposedException">既にオブジェクトが解放済みです</exception>
+        private void DoProcessMessage()
+        {
+            // 解放済み例外送出関数を叩く
+            ThrowIfDisposed();
+
+
+            // メッセージキューをロック
+            lock (messageQueue)
+            {
+                // メッセージ処理中にポストされても次回になるよう、今回処理するべきメッセージ件数の取得
+                var processCount = messageQueue.Count;
+
+
+                // 今回処理するべきメッセージの件数分だけループ
+                for (int i = 0; i < processCount; ++i)
+                {
+                    // メッセージを呼ぶ
+                    messageQueue.Dequeue().Invoke();
+                }
+            }
+        }
+
+
+        /// <summary>
+        /// 解放済みの場合に、例外を送出します。
+        /// </summary>
+        /// <exception cref="ObjectDisposedException">既にオブジェクトが解放済みです</exception>
+        private void ThrowIfDisposed()
+        {
+            // 解放済みなら
+            if (disposed)
+            {
+                // 解放済み例外を投げる
+                throw new ObjectDisposedException(null);
+            }
+        }
+    }
+    #endregion
+
+
+
+    #region Exception and Attribute
     /// <summary>
     /// サービスが既に存在している場合にスローされる例外クラスです
     /// </summary>
@@ -363,11 +659,74 @@ namespace IceMilkTea.Core
         {
         }
     }
+
+
+
+    /// <summary>
+    /// GameMain クラスのアセット生成ツールメニューの非表示を示す属性クラスです
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
+    public class HideCreateGameMainAssetMenuAttribute : Attribute
+    {
+    }
     #endregion
 
 
 
-    #region PlayerLoopSystem用型定義と更新タイミング列挙型
+    #region SafeGameMain
+    /// <summary>
+    /// 起動するべきGameMainが見つからなかった場合や、起動できない場合において
+    /// 代わりに起動するための GameMain クラスです。
+    /// </summary>
+    [HideCreateGameMainAssetMenu]
+    internal class SafeGameMain : GameMain
+    {
+        /// <summary>
+        /// セーフ起動時のIceMilkTeaは、起動を継続しないようにします。
+        /// </summary>
+        /// <returns>この関数は常にfalseを返します</returns>
+        protected override bool Continue()
+        {
+            // 起動を止めるようにする
+            return false;
+        }
+    }
+    #endregion
+
+
+
+    #region Defines
+    /// <summary>
+    /// ゲームサービスが動作を開始するための情報を保持する構造体です
+    /// </summary>
+    public struct GameServiceStartupInfo
+    {
+        /// <summary>
+        /// サービスが更新処理として必要としている更新関数テーブル
+        /// </summary>
+        public Dictionary<GameServiceUpdateTiming, Action> UpdateFunctionTable { get; set; }
+    }
+
+
+
+    /// <summary>
+    /// ゲームが終了要求に対する答えを表します
+    /// </summary>
+    public enum GameShutdownAnswer
+    {
+        /// <summary>
+        /// ゲームが終了することを許可します
+        /// </summary>
+        Approve,
+
+        /// <summary>
+        /// ゲームが終了することを拒否します
+        /// </summary>
+        Reject,
+    }
+
+
+
     /// <summary>
     /// PlayerLoopSystemに登録する際に必要になる型情報を定義したGameService用構造体です
     /// </summary>
@@ -594,82 +953,6 @@ namespace IceMilkTea.Core
         /// {yield return endOfFrame; OnEndOfFrame;}
         /// </summary>
         OnEndOfFrame = (1 << 23),
-    }
-    #endregion
-
-
-
-    #region Misc
-    /// <summary>
-    /// ゲームが終了要求に対する答えを表します
-    /// </summary>
-    public enum GameShutdownAnswer
-    {
-        /// <summary>
-        /// ゲームが終了することを許可します
-        /// </summary>
-        Approve,
-
-        /// <summary>
-        /// ゲームが終了することを拒否します
-        /// </summary>
-        Reject,
-    }
-
-
-
-    /// <summary>
-    /// ゲームサービスが動作を開始するための情報を保持する構造体です
-    /// </summary>
-    public struct GameServiceStartupInfo
-    {
-        /// <summary>
-        /// サービスが更新処理として必要としている更新関数テーブル
-        /// </summary>
-        public Dictionary<GameServiceUpdateTiming, Action> UpdateFunctionTable { get; set; }
-    }
-    #endregion
-
-
-
-    #region GameService抽象クラス
-    /// <summary>
-    /// ゲームのサブシステムをサービスとして提供するための基本クラスです。
-    /// ゲームのサブシステムを実装する場合は、このクラスを継承し適切な振る舞いを実装してください。
-    /// </summary>
-    public abstract class GameService
-    {
-        /// <summary>
-        /// サービスを起動します。
-        /// </summary>
-        /// <param name="info">サービスが起動する時に必要とする情報を設定します</param>
-        protected internal virtual void Startup(out GameServiceStartupInfo info)
-        {
-            // 特に何もしない起動情報を設定して修了
-            info = new GameServiceStartupInfo()
-            {
-                UpdateFunctionTable = null,
-            };
-        }
-
-
-        /// <summary>
-        /// ゲームアプリケーションが終了することを許可するかどうかを判断します。
-        /// </summary>
-        /// <returns>アプリケーションが終了することを許可する場合は GameShutdownAnswer.Approve を、許可しない場合は GameShutdownAnswer.Reject を返します</returns>
-        protected internal virtual GameShutdownAnswer JudgeGameShutdown()
-        {
-            // 通常は許可をする
-            return GameShutdownAnswer.Approve;
-        }
-
-
-        /// <summary>
-        /// サービスをシャットダウンします
-        /// </summary>
-        protected internal virtual void Shutdown()
-        {
-        }
     }
     #endregion
 
@@ -1445,6 +1728,575 @@ namespace IceMilkTea.Core
 
             // たどり着いた型を返す
             return serviceType;
+        }
+        #endregion
+    }
+    #endregion
+
+
+
+    #region ImtPlayerLoopSystem
+    /// <summary>
+    /// ループシステムの挿入をする時、対象の型に対して挿入するタイミングを指示します
+    /// </summary>
+    public enum InsertTiming
+    {
+        /// <summary>
+        /// 対象の前に挿入を指示します
+        /// </summary>
+        BeforeInsert,
+
+        /// <summary>
+        /// 対象の後に挿入を指示します
+        /// </summary>
+        AfterInsert,
+    }
+
+
+
+    /// <summary>
+    /// PlayerLoopSystem構造体の内容をクラスとして表現され、更に調整するための機構を保持したクラスです
+    /// </summary>
+    public class ImtPlayerLoopSystem
+    {
+        /// <summary>
+        /// ループシステムの検索で、対象のループシステムを見つけられなかったときに返す値です
+        /// </summary>
+        public const int LoopSystemNotFoundValue = -1;
+
+
+
+        // クラス変数宣言
+        private static ImtPlayerLoopSystem lastBuildLoopSystem;
+
+        // メンバ変数定義
+        private Type type;
+        private List<ImtPlayerLoopSystem> subLoopSystemList;
+        private PlayerLoopSystem.UpdateFunction updateDelegate;
+        private IntPtr updateFunction;
+        private IntPtr loopConditionFunction;
+
+
+
+        #region コンストラクタ
+        /// <summary>
+        /// クラスの初期化を行います
+        /// </summary>
+        static ImtPlayerLoopSystem()
+        {
+            // アプリケーション終了イベントを登録する
+            Application.quitting += OnApplicationQuit;
+        }
+
+
+        /// <summary>
+        /// 指定されたPlayerLoopSystem構造体オブジェクトから値をコピーしてインスタンスの初期化を行います。
+        /// また、指定されたPlayerLoopSystem構造体オブジェクトにサブループシステムが存在する場合は再帰的にインスタンスの初期化が行われます。
+        /// </summary>
+        /// <param name="originalPlayerLoopSystem">コピー元になるPlayerLoopSystem構造体オブジェクトへの参照</param>
+        public ImtPlayerLoopSystem(ref PlayerLoopSystem originalPlayerLoopSystem)
+        {
+            // 参照元から値を引っ張って初期化する
+            type = originalPlayerLoopSystem.type;
+            updateDelegate = originalPlayerLoopSystem.updateDelegate;
+            updateFunction = originalPlayerLoopSystem.updateFunction;
+            loopConditionFunction = originalPlayerLoopSystem.loopConditionFunction;
+
+
+            // もしサブシステムが有効な数で存在するなら
+            if (originalPlayerLoopSystem.subSystemList != null && originalPlayerLoopSystem.subSystemList.Length > 0)
+            {
+                // 再帰的にコピーを生成する
+                var enumerable = originalPlayerLoopSystem.subSystemList.Select(original => new ImtPlayerLoopSystem(ref original));
+                subLoopSystemList = new List<ImtPlayerLoopSystem>(enumerable);
+            }
+            else
+            {
+                // 存在しないならインスタンスの生成だけする
+                subLoopSystemList = new List<ImtPlayerLoopSystem>();
+            }
+        }
+
+
+        /// <summary>
+        /// 指定された型でインスタンスの初期化を行います
+        /// </summary>
+        /// <param name="type">生成するPlayerLoopSystemの型</param>
+        public ImtPlayerLoopSystem(Type type) : this(type, null)
+        {
+        }
+
+
+        /// <summary>
+        /// 指定された型と更新関数でインスタンスの初期化を行います
+        /// </summary>
+        /// <param name="type">生成するPlayerLoopSystemの型</param>
+        /// <param name="updateDelegate">生成するPlayerLoopSystemの更新関数。更新関数が不要な場合はnullの指定が可能です</param>
+        /// <exception cref="ArgumentNullException">typeがnullです</exception>
+        public ImtPlayerLoopSystem(Type type, PlayerLoopSystem.UpdateFunction updateDelegate)
+        {
+            // 更新の型がnullなら
+            if (type == null)
+            {
+                // 関数は死ぬ
+                throw new ArgumentNullException(nameof(type));
+            }
+
+
+            // シンプルに初期化をする
+            this.type = type;
+            this.updateDelegate = updateDelegate;
+            subLoopSystemList = new List<ImtPlayerLoopSystem>();
+        }
+        #endregion
+
+
+        #region Unityイベントハンドラ
+        /// <summary>
+        /// Unityがアプリケーションの終了をする時に呼び出されます
+        /// </summary>
+        private static void OnApplicationQuit()
+        {
+            //イベントの登録を解除する
+            Application.quitting -= OnApplicationQuit;
+
+
+            // Unityの弄り倒したループ構成をもとに戻してあげる
+            PlayerLoop.SetPlayerLoop(PlayerLoop.GetDefaultPlayerLoop());
+        }
+        #endregion
+
+
+        #region Unity変換関数群
+        /// <summary>
+        /// Unityの標準プレイヤーループを ImtPlayerLoopSystem として取得します
+        /// </summary>
+        /// <returns>Unityの標準プレイヤーループをImtPlayerLoopSystemにキャストされた結果を返します</returns>
+        public static ImtPlayerLoopSystem GetUnityDefaultPlayerLoop()
+        {
+            // キャストして返すだけ
+            return (ImtPlayerLoopSystem)PlayerLoop.GetDefaultPlayerLoop();
+        }
+
+
+        /// <summary>
+        /// このインスタンスを本来の構造へ構築し、Unityのプレイヤーループへ設定します
+        /// </summary>
+        public void BuildAndSetUnityPlayerLoop()
+        {
+            // 最後に構築した経験のあるループシステムとして覚えて、自身をキャストして設定するだけ
+            lastBuildLoopSystem = this;
+            PlayerLoop.SetPlayerLoop((PlayerLoopSystem)this);
+        }
+        #endregion
+
+
+        #region コントロール関数群
+        /// <summary>
+        /// BuildAndSetUnityDefaultPlayerLoop関数によって最後に構築されたループシステムを取得します。
+        /// まだ一度も構築した経験がない場合は、GetUnityDefaultPlayerLoop関数の値を採用します。
+        /// </summary>
+        /// <returns>最後に構築されたループシステムを返します</returns>
+        public static ImtPlayerLoopSystem GetLastBuildLoopSystem()
+        {
+            // 過去に構築経験があれば返して、まだなければGetUnityDefaultPlayerLoopの結果を返す
+            return lastBuildLoopSystem ?? GetUnityDefaultPlayerLoop();
+        }
+
+
+        /// <summary>
+        /// 指定されたインデックスの位置に更新関数を挿入します。
+        /// また、nullの更新関数を指定すると何もしないループシステムが生成されます。
+        /// </summary>
+        /// <typeparam name="T">更新関数を表す型</typeparam>
+        /// <param name="index">挿入するインデックスの位置</param>
+        /// <param name="function">挿入する更新関数</param>
+        public void InsertLoopSystem<T>(int index, PlayerLoopSystem.UpdateFunction function)
+        {
+            // 新しいループシステムを作って本来の挿入関数を叩く
+            var loopSystem = new ImtPlayerLoopSystem(typeof(T), function);
+            InsertLoopSystem(index, loopSystem);
+        }
+
+
+        /// <summary>
+        /// 指定されたインデックスの位置にループシステムを挿入します
+        /// </summary>
+        /// <param name="index">挿入するインデックスの位置</param>
+        /// <param name="loopSystem">挿入するループシステム</param>
+        /// <exception cref="ArgumentNullException">loopSystemがnullです</exception>
+        public void InsertLoopSystem(int index, ImtPlayerLoopSystem loopSystem)
+        {
+            // ループシステムがnullなら（境界チェックはあえてここでやらず、List<T>コンテナに任せる）
+            if (loopSystem == null)
+            {
+                // nullの挿入は許されない！
+                throw new ArgumentNullException(nameof(loopSystem));
+            }
+
+
+            // 指定されたインデックスにループシステムを挿入する
+            subLoopSystemList.Insert(index, loopSystem);
+        }
+
+
+        /// <summary>
+        /// 指定された型の更新ループに対して、ループシステムをタイミングの位置に挿入します
+        /// </summary>
+        /// <typeparam name="T">これから挿入するループシステムの挿入起点となる更新型</typeparam>
+        /// <typeparam name="U">挿入する予定の更新関数を表す型</typeparam>
+        /// <param name="timing">T で指定された更新ループを起点にどのタイミングで挿入するか</param>
+        /// <param name="function">挿入する更新関数</param>
+        /// <returns>対象のループシステムが挿入された場合はtrueを、挿入されなかった場合はfalseを返します</returns>
+        public bool InsertLoopSystem<T, U>(InsertTiming timing, PlayerLoopSystem.UpdateFunction function)
+        {
+            // 再帰検索を有効にして挿入関数を叩く
+            return InsertLoopSystem<T, U>(timing, function, true);
+        }
+
+
+        /// <summary>
+        /// 指定された型の更新ループに対して、ループシステムをタイミングの位置に挿入します
+        /// </summary>
+        /// <typeparam name="T">これから挿入するループシステムの挿入起点となる更新型</typeparam>
+        /// <typeparam name="U">挿入する予定の更新関数を表す型</typeparam>
+        /// <param name="timing">T で指定された更新ループを起点にどのタイミングで挿入するか</param>
+        /// <param name="function">挿入する更新関数</param>
+        /// <param name="recursiveSearch">対象の型の検索を再帰的に行うかどうか</param>
+        /// <returns>対象のループシステムが挿入された場合はtrueを、挿入されなかった場合はfalseを返します</returns>
+        public bool InsertLoopSystem<T, U>(InsertTiming timing, PlayerLoopSystem.UpdateFunction function, bool recursiveSearch)
+        {
+            // 新しいループシステムを作って本来の挿入関数を叩く
+            var loopSystem = new ImtPlayerLoopSystem(typeof(U), function);
+            return InsertLoopSystem<T>(timing, loopSystem, recursiveSearch);
+        }
+
+
+        /// <summary>
+        /// 指定された型の更新ループに対して、ループシステムをタイミングの位置に挿入します
+        /// </summary>
+        /// <typeparam name="T">これから挿入するループシステムの挿入起点となる更新型</typeparam>
+        /// <param name="timing">T で指定された更新ループを起点にどのタイミングで挿入するか</param>
+        /// <param name="loopSystem">挿入するループシステム</param>
+        /// <exception cref="ArgumentNullException">loopSystemがnullです</exception>
+        /// <returns>対象のループシステムが挿入された場合はtrueを、挿入されなかった場合はfalseを返します</returns>
+        public bool InsertLoopSystem<T>(InsertTiming timing, ImtPlayerLoopSystem loopSystem)
+        {
+            // 再帰検索を有効にして本来の挿入関数を叩く
+            return InsertLoopSystem<T>(timing, loopSystem, true);
+        }
+
+
+        /// <summary>
+        /// 指定された型の更新ループに対して、ループシステムをタイミングの位置に挿入します
+        /// </summary>
+        /// <typeparam name="T">これから挿入するループシステムの挿入起点となる更新型</typeparam>
+        /// <param name="timing">T で指定された更新ループを起点にどのタイミングで挿入するか</param>
+        /// <param name="loopSystem">挿入するループシステム</param>
+        /// <param name="recursiveSearch">対象の型の検索を再帰的に行うかどうか</param>
+        /// <exception cref="ArgumentNullException">loopSystemがnullです</exception>
+        /// <returns>対象のループシステムが挿入された場合はtrueを、挿入されなかった場合はfalseを返します</returns>
+        public bool InsertLoopSystem<T>(InsertTiming timing, ImtPlayerLoopSystem loopSystem, bool recursiveSearch)
+        {
+            // ループシステムがnullなら
+            if (loopSystem == null)
+            {
+                // nullの挿入は許されない！
+                throw new ArgumentNullException(nameof(loopSystem));
+            }
+
+
+            // 挿入するインデックス値を探すが見つけられなかったら
+            var insertIndex = IndexOf<T>();
+            if (insertIndex == LoopSystemNotFoundValue)
+            {
+                // もし再帰的に調べるのなら
+                if (recursiveSearch)
+                {
+                    // 自身のサブループシステム分回る
+                    foreach (var subLoopSystem in subLoopSystemList)
+                    {
+                        // サブループシステムに対して挿入を依頼して成功したのなら
+                        if (subLoopSystem.InsertLoopSystem<T>(timing, loopSystem, recursiveSearch))
+                        {
+                            // 成功を返す
+                            return true;
+                        }
+                    }
+                }
+
+
+                // やっぱり駄目だったよ
+                return false;
+            }
+
+
+            // 検索結果を見つけたのなら、挿入タイミングによってインデックス値を調整して挿入後、成功を返す
+            insertIndex = timing == InsertTiming.BeforeInsert ? insertIndex : insertIndex + 1;
+            subLoopSystemList.Insert(insertIndex, loopSystem);
+            return true;
+        }
+
+
+        /// <summary>
+        /// 指定された型の更新ループをサブループシステムから削除します
+        /// </summary>
+        /// <typeparam name="T">削除する更新ループの型</typeparam>
+        /// <param name="recursiveSearch">対象の型を再帰的に検索し削除するかどうか</param>
+        /// <returns>対象のループシステムが削除された場合はtrueを、削除されなかった場合はfalseを返します</returns>
+        public bool RemoveLoopSystem<T>(bool recursiveSearch)
+        {
+            // 削除するインデックス値を探すが見つけられなかったら
+            var removeIndex = IndexOf<T>();
+            if (removeIndex == LoopSystemNotFoundValue)
+            {
+                // もし再帰的に調べるのなら
+                if (recursiveSearch)
+                {
+                    // 自身のサブループシステム分回る
+                    foreach (var subLoopSystem in subLoopSystemList)
+                    {
+                        // サブループシステムに対して削除依頼して成功したのなら
+                        if (subLoopSystem.RemoveLoopSystem<T>(recursiveSearch))
+                        {
+                            // 成功を返す
+                            return true;
+                        }
+                    }
+                }
+
+
+                // だめでした
+                return false;
+            }
+
+
+            // 対象インデックスの要素を殺す
+            subLoopSystemList.RemoveAt(removeIndex);
+            return true;
+        }
+
+
+        /// <summary>
+        /// 指定された型の更新ループを指定された数だけ移動します。
+        /// また、移動量が境界を超えないように内部で調整されます。
+        /// </summary>
+        /// <typeparam name="T">移動する更新ループの型</typeparam>
+        /// <param name="count">移動する量、負の値なら前方へ、正の値なら後方へ移動します</param>
+        /// <param name="recursiveSearch">移動する型が見つからない場合、再帰的に検索をするかどうか</param>
+        /// <returns>移動に成功した場合はtrueを、移動に失敗した場合はfalseを返します</returns>
+        public bool MoveLoopSystem<T>(int count, bool recursiveSearch)
+        {
+            // 移動する更新ループの位置を特定するが、見つけられなかったら
+            var currentIndex = IndexOf<T>();
+            if (currentIndex == LoopSystemNotFoundValue)
+            {
+                // もし再帰的に調べるのなら
+                if (recursiveSearch)
+                {
+                    // 自身のサブループシステム分回る
+                    foreach (var childLoopSystem in subLoopSystemList)
+                    {
+                        // サブループシステムに対して削除を依頼して成功したのなら
+                        if (childLoopSystem.MoveLoopSystem<T>(count, recursiveSearch))
+                        {
+                            // 成功を返す
+                            return true;
+                        }
+                    }
+                }
+
+
+                // だめだったらだめ
+                return false;
+            }
+
+
+            // 新しいインデックス値を求める
+            // 更にインデックス値が後方へ移動する場合は削除分ズレるので-1する
+            var newIndex = currentIndex + count + (count > 0 ? -1 : 0);
+            if (newIndex < 0) newIndex = 0;
+            if (newIndex > subLoopSystemList.Count) newIndex = subLoopSystemList.Count;
+
+
+            // 古いインデックスから値を取り出して削除した後新しいインデックスに挿入
+            var subLoopSystem = subLoopSystemList[currentIndex];
+            subLoopSystemList.RemoveAt(currentIndex);
+            subLoopSystemList.Insert(newIndex, subLoopSystem);
+            return true;
+        }
+
+
+        /// <summary>
+        /// 指定された更新型でループシステムを探し出します。
+        /// </summary>
+        /// <typeparam name="T">検索するループシステムの型</typeparam>
+        /// <param name="recursiveSearch">対象の型の検索を再帰的に行うかどうか</param>
+        /// <returns>最初に見つけたループシステムを返しますが、見つけられなかった場合はnullを返します</returns>
+        public ImtPlayerLoopSystem FindLoopSystem<T>(bool recursiveSearch)
+        {
+            // 自身のサブループシステムに該当の型があるか調べて、見つけたら
+            var result = subLoopSystemList.Find(loopSystem => loopSystem.type == typeof(T));
+            if (result != null)
+            {
+                // 結果を返す
+                return result;
+            }
+
+
+            // 見つけられなく、かつ再帰検索でないのなら
+            if (result == null && !recursiveSearch)
+            {
+                // 諦めてnullを返す
+                return null;
+            }
+
+
+            // 自分のサブループシステムにも検索を問いかける
+            return subLoopSystemList.Find(loopSystem => loopSystem.FindLoopSystem<T>(recursiveSearch) != null);
+        }
+
+
+        /// <summary>
+        /// 指定された更新型で存在インデックス位置を取得します
+        /// </summary>
+        /// <typeparam name="T">検索するループシステムの型</typeparam>
+        /// <returns>最初に見つけたループシステムのインデックスを返しますが、見つけられなかった場合は ImtPlayerLoopSystem.LoopSystemNotFoundValue をかえします</returns>
+        public int IndexOf<T>()
+        {
+            // 自身のサブループシステムに該当の型があるか調べるが、見つけられなかったら
+            var result = subLoopSystemList.FindIndex(loopSystem => loopSystem.type == typeof(T));
+            if (result == -1)
+            {
+                // 見つけられなかったことを返す
+                return LoopSystemNotFoundValue;
+            }
+
+
+            // 見つけた位置を返す
+            return result;
+        }
+
+
+        /// <summary>
+        /// 内部で保持しているUnityネイティブ関数の参照をリセットします
+        /// </summary>
+        public void ResetUnityNativeFunctions()
+        {
+            // Unityのネイティブ関数系全てリセットする
+            updateFunction = default(IntPtr);
+            loopConditionFunction = default(IntPtr);
+        }
+
+
+        /// <summary>
+        /// 指定された型を設定します
+        /// </summary>
+        /// <param name="type">変更する新しい型</param>
+        /// <exception cref="ArgumentNullException">typeがnullです</exception>
+        public void SetType(Type type)
+        {
+            // もしnullが渡されていたら
+            if (type == null)
+            {
+                // 関数は死ぬ
+                throw new ArgumentNullException(nameof(type));
+            }
+
+
+            // 指示された型を設定する
+            this.type = type;
+        }
+
+
+        /// <summary>
+        /// 指定された更新関数を設定します
+        /// </summary>
+        /// <param name="updateFunction">設定する新しい更新関数。nullを設定することができます</param>
+        public void SetUpdateFunction(PlayerLoopSystem.UpdateFunction updateFunction)
+        {
+            // 更新関数を素直に設定する
+            updateDelegate = updateFunction;
+        }
+
+
+        /// <summary>
+        /// クラス化されているPlayerLoopSystemを構造体のPlayerLoopSystemへ変換します。
+        /// また、サブループシステムを保持している場合はサブループシステムも構造体のインスタンスが新たに生成され、初期化されます。
+        /// </summary>
+        /// <returns>内部コンテキストのコピーを行ったPlayerLoopSystemを返します</returns>
+        public PlayerLoopSystem ToPlayerLoopSystem()
+        {
+            // 新しいPlayerLoopSystem構造体のインスタンスを生成して初期化を行った後返す
+            return new PlayerLoopSystem()
+            {
+                // 各パラメータのコピー（サブループシステムも再帰的に構造体へインスタンス化）
+                type = type,
+                updateDelegate = updateDelegate,
+                updateFunction = updateFunction,
+                loopConditionFunction = loopConditionFunction,
+                subSystemList = subLoopSystemList.Select(source => source.ToPlayerLoopSystem()).ToArray(),
+            };
+        }
+        #endregion
+
+
+        #region オペレータ＆ToStringオーバーライド
+        /// <summary>
+        /// PlayerLoopSystemからImtPlayerLoopSystemへキャストします
+        /// </summary>
+        /// <param name="original">キャストする元になるPlayerLoopSystem</param>
+        public static explicit operator ImtPlayerLoopSystem(PlayerLoopSystem original)
+        {
+            // 渡されたPlayerLoopSystemからImtPlayerLoopSystemのインスタンスを生成して返す
+            return new ImtPlayerLoopSystem(ref original);
+        }
+
+
+        /// <summary>
+        /// ImtPlayerLoopSystemからPlayerLoopSystemへキャストします
+        /// </summary>
+        /// <param name="klass">キャストする元になるImtPlayerLoopSystem</param>
+        public static explicit operator PlayerLoopSystem(ImtPlayerLoopSystem klass)
+        {
+            // 渡されたImtPlayerLoopSystemからPlayerLoopSystemへ変換する関数を叩いて返す
+            return klass.ToPlayerLoopSystem();
+        }
+
+
+        /// <summary>
+        /// ImpPlayerLoopSystem内のLoopSystem階層表示を文字列へ変換します
+        /// </summary>
+        /// <returns>このインスタンスのLoopSystem階層状況を文字列化したものを返します</returns>
+        public override string ToString()
+        {
+            // バッファ用意
+            var buffer = new StringBuilder();
+
+
+            // バッファにループシステムツリーの内容をダンプする
+            DumpLoopSystemTree(buffer, string.Empty);
+
+
+            // バッファの内容を返す
+            return buffer.ToString();
+        }
+
+
+        /// <summary>
+        /// ImpPlayerLoopSystem内のLoopSystem階層を再帰的にバッファへ文字列を追記します
+        /// </summary>
+        /// <param name="buffer">追記対象のバッファ</param>
+        /// <param name="indentSpace">現在のインデントスペース</param>
+        private void DumpLoopSystemTree(StringBuilder buffer, string indentSpace)
+        {
+            // 自分の名前からぶら下げツリー表記
+            buffer.Append($"{indentSpace}[{(type == null ? "NULL" : type.Name)}]\n");
+            foreach (var subSystem in subLoopSystemList)
+            {
+                // 新しいインデントスペース文字列を用意して自分の子にダンプさせる
+                subSystem.DumpLoopSystemTree(buffer, indentSpace + "  ");
+            }
         }
         #endregion
     }
