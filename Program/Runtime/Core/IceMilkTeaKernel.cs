@@ -13,7 +13,11 @@
 // 2. Altered source versions must be plainly marked as such, and must not be misrepresented as being the original software.
 // 3. This notice may not be removed or altered from any source distribution.
 
+#define IMT_KERNEL_PROFILING
+#define IMT_KERNEL_DEBUG
+
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
@@ -33,21 +37,6 @@ namespace IceMilkTea.Core
     [HideCreateGameMainAssetMenu]
     public abstract class GameMain : ScriptableObject
     {
-        #region PlayerLoopSystem用型定義
-        /// <summary>
-        /// ゲームサービスマネージャのサービス起動ルーチンを実行する型です
-        /// </summary>
-        public struct GameServiceManagerStartup { }
-
-
-        /// <summary>
-        /// ゲームサービスマネージャのサービス終了ルーチンを実行する型です
-        /// </summary>
-        public struct GameServiceManagerCleanup { }
-        #endregion
-
-
-
         #region プロパティ
         /// <summary>
         /// 現在のゲームメインコンテキストを取得します
@@ -273,6 +262,311 @@ namespace IceMilkTea.Core
             return new GameServiceManager();
         }
         #endregion
+
+
+        #region 内部ゲームループイベント
+        private void InternalMainLoopHead()
+        {
+            MainLoopHead();
+        }
+
+
+        private void InternalPreFixedUpdate()
+        {
+            PreFixedUpdate();
+        }
+
+
+        private void InternalPostFixedUpdate()
+        {
+            PostFixedUpdate();
+        }
+
+
+        private void InternalPrePhysicsSimulation()
+        {
+            PrePhysicsSimulation();
+        }
+
+
+        private void InternalPostPhysicsSimulation()
+        {
+            PostPhysicsSimulation();
+        }
+
+
+        private void InternalPreWaitForFixedUpdate()
+        {
+            PreWaitForFixedUpdate();
+        }
+
+
+        private void InternalPostWaitForFixedUpdate()
+        {
+            PostWaitForFixedUpdate();
+        }
+
+
+        private void InternalPreProcessSynchronizationContext()
+        {
+            PreProcessSynchronizationContext();
+        }
+
+
+        private void InternalPostProcessSynchronizationContext()
+        {
+            PostProcessSynchronizationContext();
+        }
+
+
+        private void InternalPreUpdate()
+        {
+            PreUpdate();
+        }
+
+
+        private void InternalPostUpdate()
+        {
+            PostUpdate();
+        }
+
+
+        private void InternalPreAnimation()
+        {
+            PreAnimation();
+        }
+
+
+        private void InternalPostAnimation()
+        {
+            PostAnimation();
+        }
+
+
+        private void InternalPreLateUpdate()
+        {
+            PreLateUpdate();
+        }
+
+
+        private void InternalPostLateUpdate()
+        {
+            PostLateUpdate();
+        }
+
+
+        private void InternalPreDrawPresent()
+        {
+            PreDrawPresent();
+        }
+
+
+        private void InternalPostDrawPresent()
+        {
+            PostDrawPresent();
+        }
+
+
+        private void InternalMainLoopTail()
+        {
+            MainLoopTail();
+        }
+
+
+        private void InternalOnApplicationFocusIn()
+        {
+            OnApplicationFocusIn();
+        }
+
+
+        private void InternalOnApplicationFocusOut()
+        {
+            OnApplicationFocusOut();
+        }
+
+
+        private void InternalOnApplicationSuspend()
+        {
+            OnApplicationSuspend();
+        }
+
+
+        private void InternalOnApplicationResume()
+        {
+            OnApplicationResume();
+        }
+
+
+        private void InternalCameraPreCulling()
+        {
+            CameraPreCulling();
+        }
+
+
+        private void InternalCameraPreRendering()
+        {
+            CameraPreRendering();
+        }
+
+
+        private void InternalCameraPostRendering()
+        {
+            CameraPostRendering();
+        }
+
+
+        private void InternalOnEndOfFrame()
+        {
+            OnEndOfFrame();
+        }
+        #endregion
+
+
+        #region オーバーライド可能なゲームループイベント
+        protected virtual void MainLoopHead()
+        {
+        }
+
+
+        protected virtual void PreFixedUpdate()
+        {
+        }
+
+
+        protected virtual void PostFixedUpdate()
+        {
+        }
+
+
+        protected virtual void PrePhysicsSimulation()
+        {
+        }
+
+
+        protected virtual void PostPhysicsSimulation()
+        {
+        }
+
+
+        protected virtual void PreWaitForFixedUpdate()
+        {
+        }
+
+
+        protected virtual void PostWaitForFixedUpdate()
+        {
+        }
+
+
+        protected virtual void PreProcessSynchronizationContext()
+        {
+        }
+
+
+        protected virtual void PostProcessSynchronizationContext()
+        {
+        }
+
+
+        protected virtual void PreUpdate()
+        {
+        }
+
+
+        protected virtual void PostUpdate()
+        {
+        }
+
+
+        protected virtual void PreAnimation()
+        {
+        }
+
+
+        protected virtual void PostAnimation()
+        {
+        }
+
+
+        protected virtual void PreLateUpdate()
+        {
+        }
+
+
+        protected virtual void PostLateUpdate()
+        {
+        }
+
+
+        protected virtual void PreDrawPresent()
+        {
+        }
+
+
+        protected virtual void PostDrawPresent()
+        {
+        }
+
+
+        protected virtual void MainLoopTail()
+        {
+        }
+
+
+        protected virtual void OnApplicationFocusIn()
+        {
+        }
+
+
+        protected virtual void OnApplicationFocusOut()
+        {
+        }
+
+
+        protected virtual void OnApplicationSuspend()
+        {
+        }
+
+
+        protected virtual void OnApplicationResume()
+        {
+        }
+
+
+        protected virtual void CameraPreCulling()
+        {
+        }
+
+
+        protected virtual void CameraPreRendering()
+        {
+        }
+
+
+        protected virtual void CameraPostRendering()
+        {
+        }
+
+
+        protected virtual void OnEndOfFrame()
+        {
+        }
+        #endregion
+
+
+
+        #region PlayerLoopSystem用型定義
+        /// <summary>
+        /// ゲームサービスマネージャのサービス起動ルーチンを実行する型です
+        /// </summary>
+        public struct GameServiceManagerStartup { }
+
+
+        /// <summary>
+        /// ゲームサービスマネージャのサービス終了ルーチンを実行する型です
+        /// </summary>
+        public struct GameServiceManagerCleanup { }
+        #endregion
     }
     #endregion
 
@@ -315,292 +609,6 @@ namespace IceMilkTea.Core
         /// </summary>
         protected internal virtual void Shutdown()
         {
-        }
-    }
-    #endregion
-
-
-
-    #region ImtSynchronizationContext
-    /// <summary>
-    /// IceMilkTea 自身が提供する同期コンテキストクラスです。
-    /// 独立したスレッドの同期コンテキストとして利用したり、特定コード範囲の同期コンテキストとして利用出来ます。
-    /// </summary>
-    public class ImtSynchronizationContext : SynchronizationContext, IDisposable
-    {
-        /// <summary>
-        /// 同期コンテキストに送られてきたコールバックを、メッセージとして保持する構造体です。
-        /// </summary>
-        private struct Message
-        {
-            // メンバ変数定義
-            private SendOrPostCallback callback;
-            private ManualResetEvent waitHandle;
-            private object state;
-
-
-
-            /// <summary>
-            /// Message のインスタンスを初期化します。
-            /// </summary>
-            /// <param name="callback">呼び出すべきコールバック関数</param>
-            /// <param name="state">コールバックに渡すオブジェクト</param>
-            /// <param name="waitHandle">コールバックの呼び出しを待機するために、利用する待機ハンドル</param>
-            public Message(SendOrPostCallback callback, object state, ManualResetEvent waitHandle)
-            {
-                // メンバの初期化
-                this.callback = callback;
-                this.waitHandle = waitHandle;
-                this.state = state;
-            }
-
-
-            /// <summary>
-            /// メッセージに設定されたコールバックを呼び出します。
-            /// また、待機ハンドルが設定されている場合は、待機ハンドルのシグナルを設定します。
-            /// </summary>
-            public void Invoke()
-            {
-                // コールバックを叩く
-                callback(state);
-
-
-                // もし待機ハンドルがあるなら
-                if (waitHandle != null)
-                {
-                    // シグナルを設定する
-                    waitHandle.Set();
-                }
-            }
-
-
-            /// <summary>
-            /// このメッセージを管理していた同期コンテキストが、何かの理由で管理できなくなった場合
-            /// このメッセージを指定された同期コンテキストに、再ポストします。
-            /// また、送信メッセージの場合は、直ちに処理され待機ハンドルのシグナルが設定されます。
-            /// </summary>
-            /// <param name="rePostTargetContext">再ポスト先の同期コンテキスト</param>
-            public void Failover(SynchronizationContext rePostTargetContext)
-            {
-                // 待機ハンドルが存在するなら
-                if (waitHandle != null)
-                {
-                    // コールバックを叩いてシグナルを設定する
-                    callback(state);
-                    waitHandle.Set();
-                    return;
-                }
-
-
-                // 再ポスト先同期コンテキストにポストする
-                rePostTargetContext.Post(callback, state);
-            }
-        }
-
-
-
-        // 定数定義
-        public const int DefaultMessageQueueCapacity = 32;
-
-        // メンバ変数定義
-        private SynchronizationContext previousContext;
-        private Queue<Message> messageQueue;
-        private int myStartupThreadId;
-        private bool disposed;
-
-
-
-        /// <summary>
-        /// ImtSynchronizationContext のインスタンスを初期化します。
-        /// </summary>
-        /// <remarks>
-        /// この同期コンテキストは messagePumpHandler が呼び出されない限りメッセージを蓄え続けます。
-        /// メッセージを処理するためには、必ず messagePumpHandler を定期的に呼び出してください。
-        /// </remarks>
-        /// <param name="messagePumpHandler">この同期コンテキストに送られてきたメッセージを処理するための、メッセージポンプハンドラを受け取ります</param>
-        public ImtSynchronizationContext(out Action messagePumpHandler)
-        {
-            // メンバの初期化と、メッセージ処理関数を伝える
-            previousContext = AsyncOperationManager.SynchronizationContext;
-            messageQueue = new Queue<Message>(DefaultMessageQueueCapacity);
-            myStartupThreadId = Thread.CurrentThread.ManagedThreadId;
-            messagePumpHandler = DoProcessMessage;
-        }
-
-
-        /// <summary>
-        /// ImtSynchronizationContext のファイナライザです。
-        /// </summary>
-        ~ImtSynchronizationContext()
-        {
-            // ファイナライザからのDispose呼び出し
-            Dispose(false);
-        }
-
-
-        /// <summary>
-        /// リソースを解放します。また、解放する際にメッセージが残っていた場合は
-        /// この同期コンテキストが生成される前に存在していた、同期コンテキストに再ポストされ、同期コンテキストが再設定されます。
-        /// </summary>
-        public void Dispose()
-        {
-            // DisposeからのDispose呼び出し
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-
-        /// <summary>
-        /// 実際のリソース解放を行います。
-        /// </summary>
-        /// <param name="disposing">マネージ解放の場合は true を、アンマネージ解放なら false を指定</param>
-        protected virtual void Dispose(bool disposing)
-        {
-            // 既に解放済みなら
-            if (disposed)
-            {
-                // 終了
-                return;
-            }
-
-
-            // もし現在の同期コンテキストが自身なら
-            if (AsyncOperationManager.SynchronizationContext == this)
-            {
-                // 同期コンテキストを、インスタンス生成時に覚えたコンテキストに戻す
-                AsyncOperationManager.SynchronizationContext = previousContext;
-            }
-
-
-            // メッセージキューをロック
-            lock (messageQueue)
-            {
-                // 全てのメッセージを処理するまでループ
-                while (messageQueue.Count > 0)
-                {
-                    // 一つ前の同期コンテキストにフェイルオーバーする
-                    messageQueue.Dequeue().Failover(previousContext);
-                }
-            }
-
-
-            // 解放済みマーク
-            disposed = true;
-        }
-
-
-        /// <summary>
-        /// ImtSynchronizationContext のインスタンスを生成と同時に、同期コンテキストの設定も行います。
-        /// </summary>
-        /// <param name="messagePumpHandler">コンストラクタの messagePumpHandler に渡す参照</param>
-        /// <returns>インスタンスの生成と設定が終わった、同期コンテキストを返します。</returns>
-        public static ImtSynchronizationContext Install(out Action messagePumpHandler)
-        {
-            // 新しい同期コンテキストのインスタンスを生成して、設定した後に返す
-            var context = new ImtSynchronizationContext(out messagePumpHandler);
-            AsyncOperationManager.SynchronizationContext = context;
-            return context;
-        }
-
-
-        /// <summary>
-        /// 同期メッセージを送信します。
-        /// </summary>
-        /// <param name="callback">呼び出すべきメッセージのコールバック</param>
-        /// <param name="state">コールバックに渡してほしいオブジェクト</param>
-        /// <exception cref="ObjectDisposedException">既にオブジェクトが解放済みです</exception>
-        public override void Send(SendOrPostCallback callback, object state)
-        {
-            // 解放済み例外送出関数を叩く
-            ThrowIfDisposed();
-
-
-            // 同じスレッドからの送信なら
-            if (Thread.CurrentThread.ManagedThreadId == myStartupThreadId)
-            {
-                // 直ちにコールバックを叩いて終了
-                callback(state);
-                return;
-            }
-
-
-            // メッセージ処理待ち用同期プリミティブを用意
-            using (var waitHandle = new ManualResetEvent(false))
-            {
-                // メッセージキューをロック
-                lock (messageQueue)
-                {
-                    // 処理して欲しいコールバックを登録
-                    messageQueue.Enqueue(new Message(callback, state, waitHandle));
-                }
-
-
-                // 登録したコールバックが処理されるまで待機
-                waitHandle.WaitOne();
-            }
-        }
-
-
-        /// <summary>
-        /// 非同期メッセージをポストします。
-        /// </summary>
-        /// <param name="callback">呼び出すべきメッセージのコールバック</param>
-        /// <param name="state">コールバックに渡してほしいオブジェクト</param>
-        /// <exception cref="ObjectDisposedException">既にオブジェクトが解放済みです</exception>
-        public override void Post(SendOrPostCallback callback, object state)
-        {
-            // 解放済み例外送出関数を叩く
-            ThrowIfDisposed();
-
-
-            // メッセージキューをロック
-            lock (messageQueue)
-            {
-                // 処理して欲しいコールバックを登録
-                messageQueue.Enqueue(new Message(callback, state, null));
-            }
-        }
-
-
-        /// <summary>
-        /// 同期コンテキストに、送られてきたメッセージを処理します。
-        /// </summary>
-        /// <exception cref="ObjectDisposedException">既にオブジェクトが解放済みです</exception>
-        private void DoProcessMessage()
-        {
-            // 解放済み例外送出関数を叩く
-            ThrowIfDisposed();
-
-
-            // メッセージキューをロック
-            lock (messageQueue)
-            {
-                // メッセージ処理中にポストされても次回になるよう、今回処理するべきメッセージ件数の取得
-                var processCount = messageQueue.Count;
-
-
-                // 今回処理するべきメッセージの件数分だけループ
-                for (int i = 0; i < processCount; ++i)
-                {
-                    // メッセージを呼ぶ
-                    messageQueue.Dequeue().Invoke();
-                }
-            }
-        }
-
-
-        /// <summary>
-        /// 解放済みの場合に、例外を送出します。
-        /// </summary>
-        /// <exception cref="ObjectDisposedException">既にオブジェクトが解放済みです</exception>
-        private void ThrowIfDisposed()
-        {
-            // 解放済みなら
-            if (disposed)
-            {
-                // 解放済み例外を投げる
-                throw new ObjectDisposedException(null);
-            }
         }
     }
     #endregion
@@ -673,7 +681,7 @@ namespace IceMilkTea.Core
 
 
 
-    #region SafeGameMain
+    #region Definitions
     /// <summary>
     /// 起動するべきGameMainが見つからなかった場合や、起動できない場合において
     /// 代わりに起動するための GameMain クラスです。
@@ -691,11 +699,9 @@ namespace IceMilkTea.Core
             return false;
         }
     }
-    #endregion
 
 
 
-    #region Defines
     /// <summary>
     /// ゲームサービスが動作を開始するための情報を保持する構造体です
     /// </summary>
@@ -2299,6 +2305,517 @@ namespace IceMilkTea.Core
             }
         }
         #endregion
+    }
+    #endregion
+
+
+
+    #region ImtSynchronizationContext
+    /// <summary>
+    /// IceMilkTea 自身が提供する同期コンテキストクラスです。
+    /// 独立したスレッドの同期コンテキストとして利用したり、特定コード範囲の同期コンテキストとして利用出来ます。
+    /// </summary>
+    public class ImtSynchronizationContext : SynchronizationContext, IDisposable
+    {
+        /// <summary>
+        /// 同期コンテキストに送られてきたコールバックを、メッセージとして保持する構造体です。
+        /// </summary>
+        private struct Message
+        {
+            // メンバ変数定義
+            private SendOrPostCallback callback;
+            private ManualResetEvent waitHandle;
+            private object state;
+
+
+
+            /// <summary>
+            /// Message のインスタンスを初期化します。
+            /// </summary>
+            /// <param name="callback">呼び出すべきコールバック関数</param>
+            /// <param name="state">コールバックに渡すオブジェクト</param>
+            /// <param name="waitHandle">コールバックの呼び出しを待機するために、利用する待機ハンドル</param>
+            public Message(SendOrPostCallback callback, object state, ManualResetEvent waitHandle)
+            {
+                // メンバの初期化
+                this.callback = callback;
+                this.waitHandle = waitHandle;
+                this.state = state;
+            }
+
+
+            /// <summary>
+            /// メッセージに設定されたコールバックを呼び出します。
+            /// また、待機ハンドルが設定されている場合は、待機ハンドルのシグナルを設定します。
+            /// </summary>
+            public void Invoke()
+            {
+                // コールバックを叩く
+                callback(state);
+
+
+                // もし待機ハンドルがあるなら
+                if (waitHandle != null)
+                {
+                    // シグナルを設定する
+                    waitHandle.Set();
+                }
+            }
+
+
+            /// <summary>
+            /// このメッセージを管理していた同期コンテキストが、何かの理由で管理できなくなった場合
+            /// このメッセージを指定された同期コンテキストに、再ポストします。
+            /// また、送信メッセージの場合は、直ちに処理され待機ハンドルのシグナルが設定されます。
+            /// </summary>
+            /// <param name="rePostTargetContext">再ポスト先の同期コンテキスト</param>
+            public void Failover(SynchronizationContext rePostTargetContext)
+            {
+                // 待機ハンドルが存在するなら
+                if (waitHandle != null)
+                {
+                    // コールバックを叩いてシグナルを設定する
+                    callback(state);
+                    waitHandle.Set();
+                    return;
+                }
+
+
+                // 再ポスト先同期コンテキストにポストする
+                rePostTargetContext.Post(callback, state);
+            }
+        }
+
+
+
+        // 定数定義
+        public const int DefaultMessageQueueCapacity = 32;
+
+        // メンバ変数定義
+        private SynchronizationContext previousContext;
+        private Queue<Message> messageQueue;
+        private int myStartupThreadId;
+        private bool disposed;
+
+
+
+        /// <summary>
+        /// ImtSynchronizationContext のインスタンスを初期化します。
+        /// </summary>
+        /// <remarks>
+        /// この同期コンテキストは messagePumpHandler が呼び出されない限りメッセージを蓄え続けます。
+        /// メッセージを処理するためには、必ず messagePumpHandler を定期的に呼び出してください。
+        /// </remarks>
+        /// <param name="messagePumpHandler">この同期コンテキストに送られてきたメッセージを処理するための、メッセージポンプハンドラを受け取ります</param>
+        public ImtSynchronizationContext(out Action messagePumpHandler)
+        {
+            // メンバの初期化と、メッセージ処理関数を伝える
+            previousContext = AsyncOperationManager.SynchronizationContext;
+            messageQueue = new Queue<Message>(DefaultMessageQueueCapacity);
+            myStartupThreadId = Thread.CurrentThread.ManagedThreadId;
+            messagePumpHandler = DoProcessMessage;
+        }
+
+
+        /// <summary>
+        /// ImtSynchronizationContext のファイナライザです。
+        /// </summary>
+        ~ImtSynchronizationContext()
+        {
+            // ファイナライザからのDispose呼び出し
+            Dispose(false);
+        }
+
+
+        /// <summary>
+        /// リソースを解放します。また、解放する際にメッセージが残っていた場合は
+        /// この同期コンテキストが生成される前に存在していた、同期コンテキストに再ポストされ、同期コンテキストが再設定されます。
+        /// </summary>
+        public void Dispose()
+        {
+            // DisposeからのDispose呼び出し
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+
+        /// <summary>
+        /// 実際のリソース解放を行います。
+        /// </summary>
+        /// <param name="disposing">マネージ解放の場合は true を、アンマネージ解放なら false を指定</param>
+        protected virtual void Dispose(bool disposing)
+        {
+            // 既に解放済みなら
+            if (disposed)
+            {
+                // 終了
+                return;
+            }
+
+
+            // もし現在の同期コンテキストが自身なら
+            if (AsyncOperationManager.SynchronizationContext == this)
+            {
+                // 同期コンテキストを、インスタンス生成時に覚えたコンテキストに戻す
+                AsyncOperationManager.SynchronizationContext = previousContext;
+            }
+
+
+            // メッセージキューをロック
+            lock (messageQueue)
+            {
+                // 全てのメッセージを処理するまでループ
+                while (messageQueue.Count > 0)
+                {
+                    // 一つ前の同期コンテキストにフェイルオーバーする
+                    messageQueue.Dequeue().Failover(previousContext);
+                }
+            }
+
+
+            // 解放済みマーク
+            disposed = true;
+        }
+
+
+        /// <summary>
+        /// ImtSynchronizationContext のインスタンスを生成と同時に、同期コンテキストの設定も行います。
+        /// </summary>
+        /// <param name="messagePumpHandler">コンストラクタの messagePumpHandler に渡す参照</param>
+        /// <returns>インスタンスの生成と設定が終わった、同期コンテキストを返します。</returns>
+        public static ImtSynchronizationContext Install(out Action messagePumpHandler)
+        {
+            // 新しい同期コンテキストのインスタンスを生成して、設定した後に返す
+            var context = new ImtSynchronizationContext(out messagePumpHandler);
+            AsyncOperationManager.SynchronizationContext = context;
+            return context;
+        }
+
+
+        /// <summary>
+        /// 同期メッセージを送信します。
+        /// </summary>
+        /// <param name="callback">呼び出すべきメッセージのコールバック</param>
+        /// <param name="state">コールバックに渡してほしいオブジェクト</param>
+        /// <exception cref="ObjectDisposedException">既にオブジェクトが解放済みです</exception>
+        public override void Send(SendOrPostCallback callback, object state)
+        {
+            // 解放済み例外送出関数を叩く
+            ThrowIfDisposed();
+
+
+            // 同じスレッドからの送信なら
+            if (Thread.CurrentThread.ManagedThreadId == myStartupThreadId)
+            {
+                // 直ちにコールバックを叩いて終了
+                callback(state);
+                return;
+            }
+
+
+            // メッセージ処理待ち用同期プリミティブを用意
+            using (var waitHandle = new ManualResetEvent(false))
+            {
+                // メッセージキューをロック
+                lock (messageQueue)
+                {
+                    // 処理して欲しいコールバックを登録
+                    messageQueue.Enqueue(new Message(callback, state, waitHandle));
+                }
+
+
+                // 登録したコールバックが処理されるまで待機
+                waitHandle.WaitOne();
+            }
+        }
+
+
+        /// <summary>
+        /// 非同期メッセージをポストします。
+        /// </summary>
+        /// <param name="callback">呼び出すべきメッセージのコールバック</param>
+        /// <param name="state">コールバックに渡してほしいオブジェクト</param>
+        /// <exception cref="ObjectDisposedException">既にオブジェクトが解放済みです</exception>
+        public override void Post(SendOrPostCallback callback, object state)
+        {
+            // 解放済み例外送出関数を叩く
+            ThrowIfDisposed();
+
+
+            // メッセージキューをロック
+            lock (messageQueue)
+            {
+                // 処理して欲しいコールバックを登録
+                messageQueue.Enqueue(new Message(callback, state, null));
+            }
+        }
+
+
+        /// <summary>
+        /// 同期コンテキストに、送られてきたメッセージを処理します。
+        /// </summary>
+        /// <exception cref="ObjectDisposedException">既にオブジェクトが解放済みです</exception>
+        private void DoProcessMessage()
+        {
+            // 解放済み例外送出関数を叩く
+            ThrowIfDisposed();
+
+
+            // メッセージキューをロック
+            lock (messageQueue)
+            {
+                // メッセージ処理中にポストされても次回になるよう、今回処理するべきメッセージ件数の取得
+                var processCount = messageQueue.Count;
+
+
+                // 今回処理するべきメッセージの件数分だけループ
+                for (int i = 0; i < processCount; ++i)
+                {
+                    // メッセージを呼ぶ
+                    messageQueue.Dequeue().Invoke();
+                }
+            }
+        }
+
+
+        /// <summary>
+        /// 解放済みの場合に、例外を送出します。
+        /// </summary>
+        /// <exception cref="ObjectDisposedException">既にオブジェクトが解放済みです</exception>
+        private void ThrowIfDisposed()
+        {
+            // 解放済みなら
+            if (disposed)
+            {
+                // 解放済み例外を投げる
+                throw new ObjectDisposedException(null);
+            }
+        }
+    }
+    #endregion
+
+
+
+    #region InternalHandlingBehaviour
+    /// <summary>
+    /// UnityのMonoBehaviourでしか得られないイベントを引き込むためのコンポーネントクラスです
+    /// </summary>
+    internal class MonoBehaviourEventBridge : MonoBehaviour
+    {
+        // 以下メンバ変数定義
+        private WaitForEndOfFrame waitForEndOfFrame;
+        private Action<bool> onApplicationFocusFunction;
+        private Action<bool> onApplicationPauseFunction;
+        private Action onEndOfFrame;
+
+
+
+        /// <summary>
+        /// 対象のゲームオブジェクトに MonoBehaviourEventBridge コンポーネントを新規アタッチを行い初期化を行います
+        /// </summary>
+        /// <param name="targetGameObject">アタッチする対象のゲームオブジェクト</param>
+        /// <returns>新規でアタッチした MonoBehaviourEventBridge のインスタンスを返します</returns>
+        /// <exception cref="ArgumentNullException">targetGameObject が null です</exception>
+        public static MonoBehaviourEventBridge Attach(GameObject targetGameObject)
+        {
+            // nullなゲームオブジェクトを渡されたら
+            if (targetGameObject == null)
+            {
+                // そんなことは許さない
+                throw new ArgumentNullException(nameof(targetGameObject));
+            }
+
+
+            // 自身をアタッチして初期化をする
+            var component = targetGameObject.AddComponent<MonoBehaviourEventBridge>();
+            component.waitForEndOfFrame = new WaitForEndOfFrame();
+            component.onApplicationFocusFunction = new Action<bool>(_ => { });
+            component.onApplicationPauseFunction = new Action<bool>(_ => { });
+            component.onEndOfFrame = new Action(() => { });
+
+
+            // コルーチンを開始する
+            component.StartCoroutine(component.DoEndOfFrameLoop());
+
+
+            // インスペクタから姿を消して返す
+            component.hideFlags = HideFlags.HideInInspector;
+            return component;
+        }
+
+
+        /// <summary>
+        /// OnApplicationFocusを実行する関数を設定します
+        /// </summary>
+        /// <param name="focusFunction">OnApplicationFocusを実行する関数</param>
+        /// <exception cref="ArgumentNullException">focusFunction が null です</exception>
+        public void SetApplicationFocusFunction(Action<bool> focusFunction)
+        {
+            // null が渡されたら
+            if (focusFunction == null)
+            {
+                // 許さない
+                throw new ArgumentNullException(nameof(focusFunction));
+            }
+
+
+            // 新しい関数を受け取る
+            onApplicationFocusFunction = focusFunction;
+        }
+
+
+        /// <summary>
+        /// OnApplicationPauseを実行する関数を設定します
+        /// </summary>
+        /// <param name="pauseFunction">OnApplicationPauseを実行する関数</param>
+        /// <exception cref="ArgumentNullException">pauseFunction が null です</exception>
+        public void SetApplicationPauseFunction(Action<bool> pauseFunction)
+        {
+            // null が渡されたら
+            if (pauseFunction == null)
+            {
+                // 許さない
+                throw new ArgumentNullException(nameof(pauseFunction));
+            }
+
+
+            // 新しい関数を受け取る
+            onApplicationPauseFunction = pauseFunction;
+        }
+
+
+        /// <summary>
+        /// WaitForEndOfFrameの継続関数を設定します
+        /// </summary>
+        /// <param name="endOfFrameFunction">WaitForEndOfFrameの継続を行う関数</param>
+        /// <exception cref="ArgumentNullException">endOfFrameFunction が null です</exception>
+        public void SetEndOfFrameFunction(Action endOfFrameFunction)
+        {
+            // null が渡されたら
+            if (endOfFrameFunction == null)
+            {
+                // 許さない
+                throw new ArgumentNullException(nameof(endOfFrameFunction));
+            }
+
+
+            // 新しい関数を受け取る
+            onEndOfFrame = endOfFrameFunction;
+        }
+
+
+        /// <summary>
+        /// コンポーネントが破棄される時の処理を実行します
+        /// </summary>
+        private void OnDestroy()
+        {
+            // 関数の参照を殺す
+            onApplicationFocusFunction = null;
+            onApplicationPauseFunction = null;
+            onEndOfFrame = null;
+        }
+
+
+        /// <summary>
+        /// ゲームアプリケーションがウィンドウなどプレイヤーのフォーカスの状態が変化したときの処理を行います
+        /// </summary>
+        /// <param name="focus">フォーカスを得られたときはtrueを、失ったときはfalse</param>
+        private void OnApplicationFocus(bool focus)
+        {
+            // 本来実行したい関数を叩く
+            onApplicationFocusFunction(focus);
+        }
+
+
+        /// <summary>
+        /// ゲームアプリケーションの再生状態が変化したときの処理を行います
+        /// </summary>
+        /// <param name="pause">一時停止になったときはtrueを、再生状態になったときはfalse</param>
+        private void OnApplicationPause(bool pause)
+        {
+            // 本来実行したい関数を叩く
+            onApplicationPauseFunction(pause);
+        }
+
+
+        /// <summary>
+        /// UnityのWaitForEndOfFrameの処理を永遠に実行し続けます
+        /// </summary>
+        /// <returns>WaitForEndOfFrame のインスタンスを常に返し続けます</returns>
+        private IEnumerator DoEndOfFrameLoop()
+        {
+            // 無限ループ
+            while (true)
+            {
+                // フレームの終端まで待機（描画の終端でゲームループの終端ではない）して関数を叩く
+                yield return waitForEndOfFrame;
+                onEndOfFrame();
+            }
+        }
+    }
+    #endregion
+
+
+
+    #region Utility
+    /// <summary>
+    /// Unity関連実装でユーティリティな関数として使えるような、関数が実装されているクラスです
+    /// </summary>
+    public static class ImtUnityUtility
+    {
+        /// <summary>
+        /// 永続的に存在し続けるゲームオブジェクトを生成します。
+        /// この関数で生成されるゲームオブジェクトはヒエラルキに表示されません。
+        /// また、名前はNewGameObjectとして作られます。
+        /// </summary>
+        /// <returns>生成された永続ゲームオブジェクトを返します</returns>
+        public static GameObject CreatePersistentGameObject()
+        {
+            // "NewGameObject" な見えないゲームオブジェクトを生成して返す
+            return CreatePersistentGameObject("NewGameObject", HideFlags.HideInHierarchy);
+        }
+
+
+        /// <summary>
+        /// 永続的に存在し続けるゲームオブジェクトを生成します。
+        /// この関数で生成されるゲームオブジェクトはヒエラルキに表示されません。
+        /// </summary>
+        /// <param name="name">生成する永続ゲームオブジェクトの名前</param>
+        /// <returns>生成された永続ゲームオブジェクトを返します</returns>
+        public static GameObject CreatePersistentGameObject(string name)
+        {
+            // 見えないゲームオブジェクトを生成して返す
+            return CreatePersistentGameObject(name, HideFlags.HideInHierarchy);
+        }
+
+
+        /// <summary>
+        /// 永続的に存在し続けるゲームオブジェクトを生成します。
+        /// </summary>
+        /// <param name="name">生成する永続ゲームオブジェクトの名前</param>
+        /// <param name="hideFlags">生成する永続ゲームオブジェクトの隠しフラグ</param>
+        /// <returns>生成された永続ゲームオブジェクトを返します</returns>
+        public static GameObject CreatePersistentGameObject(string name, HideFlags hideFlags)
+        {
+            // ゲームオブジェクトを生成する
+            var gameObject = new GameObject(name);
+
+
+            // ヒエラルキから姿を消して永続化
+            gameObject.hideFlags = hideFlags;
+            UnityEngine.Object.DontDestroyOnLoad(gameObject);
+
+
+            // トランスフォームを取得して念の為初期値を入れる
+            var transform = gameObject.GetComponent<Transform>();
+            transform.position = Vector3.zero;
+            transform.rotation = Quaternion.identity;
+            transform.localScale = Vector3.one;
+
+
+            // 作ったゲームオブジェクトを返す
+            return gameObject;
+        }
     }
     #endregion
 }
