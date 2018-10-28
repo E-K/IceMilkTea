@@ -688,10 +688,10 @@ namespace IceMilkTea.Core
         #region ImtSynchronizationContext
         /// <summary>
         /// IceMilkTea 自身が提供する同期コンテキストクラスです。
-        /// 独立したスレッドの同期コンテキストとして利用したり、特定コード範囲の同期コンテキストとして利用出来ます。
         /// </summary>
         private class ImtSynchronizationContext : SynchronizationContext, IDisposable
         {
+            #region メッセージ構造体
             /// <summary>
             /// 同期コンテキストに送られてきたコールバックを、メッセージとして保持する構造体です。
             /// </summary>
@@ -709,7 +709,7 @@ namespace IceMilkTea.Core
                 /// </summary>
                 /// <param name="callback">呼び出すべきコールバック関数</param>
                 /// <param name="state">コールバックに渡すオブジェクト</param>
-                /// <param name="waitHandle">コールバックの呼び出しを待機するために、利用する待機ハンドル</param>
+                /// <param name="waitHandle">コールバックの呼び出しを待機するために利用する待機ハンドル。待機しない場合は null を指定</param>
                 public Message(SendOrPostCallback callback, object state, ManualResetEvent waitHandle)
                 {
                     // メンバの初期化
@@ -725,16 +725,9 @@ namespace IceMilkTea.Core
                 /// </summary>
                 public void Invoke()
                 {
-                    // コールバックを叩く
+                    // コールバックを叩いて、待機ハンドルをシグナルに設定する
                     callback(state);
-
-
-                    // もし待機ハンドルがあるなら
-                    if (waitHandle != null)
-                    {
-                        // シグナルを設定する
-                        waitHandle.Set();
-                    }
+                    waitHandle?.Set();
                 }
 
 
@@ -760,6 +753,7 @@ namespace IceMilkTea.Core
                     rePostTargetContext.Post(callback, state);
                 }
             }
+            #endregion
 
 
 
@@ -774,6 +768,7 @@ namespace IceMilkTea.Core
 
 
 
+            #region コンストラクタ＆デストラクタ＆Dispose
             /// <summary>
             /// ImtSynchronizationContext のインスタンスを初期化します。
             /// </summary>
@@ -851,22 +846,25 @@ namespace IceMilkTea.Core
                 // 解放済みマーク
                 disposed = true;
             }
+            #endregion
 
 
+            #region Install
             /// <summary>
             /// ImtSynchronizationContext のインスタンスを生成と同時に、同期コンテキストの設定も行います。
+            /// また、同期コンテキストをアニンストールする場合は、該当インスタンスの Dispose() を実行してください。
             /// </summary>
             /// <param name="messagePumpHandler">コンストラクタの messagePumpHandler に渡す参照</param>
             /// <returns>インスタンスの生成と設定が終わった、同期コンテキストを返します。</returns>
             public static ImtSynchronizationContext Install(out Action messagePumpHandler)
             {
                 // 新しい同期コンテキストのインスタンスを生成して、設定した後に返す
-                var context = new ImtSynchronizationContext(out messagePumpHandler);
-                AsyncOperationManager.SynchronizationContext = context;
-                return context;
+                return (ImtSynchronizationContext)(AsyncOperationManager.SynchronizationContext = new ImtSynchronizationContext(out messagePumpHandler));
             }
+            #endregion
 
 
+            #region Message Handler
             /// <summary>
             /// 同期メッセージを送信します。
             /// </summary>
@@ -951,8 +949,10 @@ namespace IceMilkTea.Core
                     }
                 }
             }
+            #endregion
 
 
+            #region Generic Function
             /// <summary>
             /// 解放済みの場合に、例外を送出します。
             /// </summary>
@@ -966,6 +966,7 @@ namespace IceMilkTea.Core
                     throw new ObjectDisposedException(null);
                 }
             }
+            #endregion
         }
         #endregion
 
