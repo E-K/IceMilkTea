@@ -36,7 +36,7 @@ namespace IceMilkTeaEditor.Utility
         public static Type[] GetCreatableGameMainTypes()
         {
             // 利用するクラスの型を取り出す
-            var gameMainType = typeof(GameMain);
+            var gameMainType = typeof(GameMain<>);
             var hideAttributeType = typeof(HideCreateGameMainAssetMenuAttribute);
 
 

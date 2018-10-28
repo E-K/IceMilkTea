@@ -17,6 +17,7 @@
 #define IMT_KERNEL_DEBUG
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
@@ -83,12 +84,13 @@ namespace IceMilkTea.Core
             }
 
 
-            // アプリケーションの終了イベントを引っ掛けておく
+            // 永続ゲームオブジェクトを生成する
+            var persistentGameObject = CreatePersistentGameObject(PersistentGameObjectName, PersistentGameObjectHideFlags);
+
+
+            // アプリケーションの終了イベントを引っ掛けてゲームループの初期化をする
             Application.quitting += InternalShutdown;
-
-
-            // ハンドラの登録をする
-            RegisterHandler();
+            InitializeGameLoop(Current, persistentGameObject);
 
 
             // サービスマネージャのインスタンスを生成して起動する
@@ -106,9 +108,9 @@ namespace IceMilkTea.Core
         /// </summary>
         private static void InternalShutdown()
         {
-            // アプリケーション終了イベントを外す
-            // （PlayerLoopSystemはPlayerLoopSystem自身が登録解除まで担保してくれているのでそのまま）
+            // アプリケーション終了イベントを外してゲームループを停止する
             Application.quitting -= InternalShutdown;
+            TerminateGameLoop(Current);
 
 
             // サービスマネージャを停止する
@@ -221,6 +223,29 @@ namespace IceMilkTea.Core
             loopSystem.InsertLoopSystem<PostLateUpdate.PresentAfterDraw>(InsertTiming.AfterInsert, postDrawPresent);
             loopSystem.InsertLoopSystem<PostLateUpdate.ExecuteGameCenterCallbacks>(InsertTiming.AfterInsert, mainLoopTail);
             loopSystem.BuildAndSetUnityPlayerLoop();
+
+
+            // 内部Unityイベントブリッジコンポーネントをアタッチしてイベントを登録する
+            gameMainGameObject.AddComponent<InternalUnityEventBridgeBehaviour>().SetGameMain(gameMain);
+
+
+            // カメラのハンドラを登録する
+            Camera.onPreCull += gameMain.InternalCameraPreCulling;
+            Camera.onPreRender += gameMain.InternalCameraPreRendering;
+            Camera.onPostRender += gameMain.InternalCameraPostRendering;
+        }
+
+
+        /// <summary>
+        /// GameMain のゲームループを停止します
+        /// </summary>
+        /// <param name="gameMain">ゲームループを制御している GameMain</param>
+        private static void TerminateGameLoop(TGameMain gameMain)
+        {
+            // カメラのハンドラを解除する
+            Camera.onPreCull -= gameMain.InternalCameraPreCulling;
+            Camera.onPreRender -= gameMain.InternalCameraPreRendering;
+            Camera.onPostRender -= gameMain.InternalCameraPostRendering;
         }
         #endregion
 
@@ -404,19 +429,19 @@ namespace IceMilkTea.Core
         }
 
 
-        private void InternalCameraPreCulling()
+        private void InternalCameraPreCulling(Camera camera)
         {
             CameraPreCulling();
         }
 
 
-        private void InternalCameraPreRendering()
+        private void InternalCameraPreRendering(Camera camera)
         {
             CameraPreRendering();
         }
 
 
-        private void InternalCameraPostRendering()
+        private void InternalCameraPostRendering(Camera camera)
         {
             CameraPostRendering();
         }
@@ -571,6 +596,86 @@ namespace IceMilkTea.Core
         {
             // 以下メンバ変数定義
             private WaitForEndOfFrame waitForEndOfFrame;
+            private TGameMain ownerGameMain;
+
+
+
+            /// <summary>
+            /// MonoBehaviourのイベントを拾うGameMainを設定します
+            /// </summary>
+            /// <param name="gameMain">設定する GameMain</param>
+            public void SetGameMain(TGameMain gameMain)
+            {
+                // 受け取る
+                ownerGameMain = gameMain;
+            }
+
+
+            /// <summary>
+            /// コンポーネントの初期化を行います
+            /// </summary>
+            private void Awake()
+            {
+                // フレーム終了待機オブジェクトの生成と、フレーム終了待機ループを開始する
+                waitForEndOfFrame = new WaitForEndOfFrame();
+                StartCoroutine(WaitEndOfFrameLoop());
+            }
+
+
+            /// <summary>
+            /// アプリケーションフォーカスの変化をハンドリングします
+            /// </summary>
+            /// <param name="focus">フォーカスを得られたときは true が、外れたときは false が設定されます</param>
+            private void OnApplicationFocus(bool focus)
+            {
+                // フォーカスを得られたのなら
+                if (focus)
+                {
+                    // フォーカスを得たイベントを呼ぶ
+                    ownerGameMain.InternalOnApplicationFocusIn();
+                }
+                else
+                {
+                    // フォーカスが外れたイベントを呼ぶ
+                    ownerGameMain.InternalOnApplicationFocusOut();
+                }
+            }
+
+
+            /// <summary>
+            /// アプリケーション再生状態の変化をハンドリングします
+            /// </summary>
+            /// <param name="pause">アプリケーションが一時停止した場合は true が、再開したときは false が設定されます</param>
+            private void OnApplicationPause(bool pause)
+            {
+                // 一時停止したのなら
+                if (pause)
+                {
+                    // サスペンドイベントを呼ぶ
+                    ownerGameMain.InternalOnApplicationSuspend();
+                }
+                else
+                {
+                    // レジュームイベントを呼ぶ
+                    ownerGameMain.InternalOnApplicationResume();
+                }
+            }
+
+
+            /// <summary>
+            /// レンダリング終了後のフレーム終了待機イベントループです
+            /// </summary>
+            /// <returns>Unityに制御したいタイミングを示す待機オブジェクトを返します</returns>
+            private IEnumerator WaitEndOfFrameLoop()
+            {
+                // 無限ループ
+                while (true)
+                {
+                    // フレーム終了待機オブジェクトを返して、戻ってきたらフレーム終了イベントを呼ぶ
+                    yield return waitForEndOfFrame;
+                    ownerGameMain.InternalOnEndOfFrame();
+                }
+            }
         }
         #endregion
 
@@ -817,22 +922,6 @@ namespace IceMilkTea.Core
         /// </summary>
         protected internal virtual void Startup()
         {
-            // 永続ゲームオブジェクトを生成してアプリケーションのフォーカス、ポーズのハンドラを登録する
-            var persistentGameObject = ImtUnityUtility.CreatePersistentGameObject();
-            var eventBridge = MonoBehaviourEventBridge.Attach(persistentGameObject);
-            eventBridge.SetApplicationFocusFunction(OnApplicationFocus);
-            eventBridge.SetApplicationPauseFunction(OnApplicationPause);
-            eventBridge.SetEndOfFrameFunction(OnEndOfFrame);
-
-
-            // カメラのハンドラを登録する
-            Camera.onPreCull += OnCameraPreCulling;
-            Camera.onPreRender += OnCameraPreRendering;
-            Camera.onPostRender += OnCameraPostRendering;
-
-
-            // アプリケーション終了要求ハンドラを登録する
-            Application.wantsToQuit += OnApplicationWantsToQuit;
         }
 
 
@@ -841,16 +930,6 @@ namespace IceMilkTea.Core
         /// </summary>
         protected internal virtual void Shutdown()
         {
-            // 終了要求ハンドラを解除する
-            Application.wantsToQuit -= OnApplicationWantsToQuit;
-
-
-            // カメラのハンドラを解除する
-            Camera.onPreCull -= OnCameraPreCulling;
-            Camera.onPreRender -= OnCameraPreRendering;
-            Camera.onPostRender -= OnCameraPostRendering;
-
-
             // サービスの数分ループ
             for (int i = 0; i < serviceManageList.Count; ++i)
             {
