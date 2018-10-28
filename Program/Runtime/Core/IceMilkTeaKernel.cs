@@ -33,13 +33,21 @@ namespace IceMilkTea.Core
     /// ゲームメインクラスの実装をするための抽象クラスです。
     /// IceMilkTeaによるゲームのスタートアップからメインループを構築する場合は必ず継承し実装をして下さい。
     /// </summary>
+    /// <typeparam name="TGameMain">実装する GameMain の型</typeparam>
     [HideCreateGameMainAssetMenu]
-    public abstract class GameMain : ScriptableObject
+    public abstract class GameMain<TGameMain> : ScriptableObject where TGameMain : GameMain<TGameMain>
     {
+        // 定数定義
+        private const string GameMainAssetName = "GameMain";
+        private const string PersistentGameObjectName = "__IceMilkTea__GameMainObject__";
+        private const HideFlags PersistentGameObjectHideFlags = HideFlags.HideInHierarchy;
+
+
+
         /// <summary>
         /// 現在のゲームメインコンテキストを取得します
         /// </summary>
-        public static GameMain Current { get; private set; }
+        public static TGameMain Current { get; private set; }
 
 
         /// <summary>
@@ -56,8 +64,13 @@ namespace IceMilkTea.Core
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Main()
         {
-            // ゲームメインをロードする
-            Current = LoadGameMain();
+            // ゲームメインをロードするが、ロードができなかった場合は
+            Current = LoadGameMain(GameMainAssetName);
+            if (Current == null)
+            {
+                // 何事もなかったかのように終了
+                return;
+            }
 
 
             // IceMilkTeaはこのまま起動を継続してはいけないのなら
@@ -70,20 +83,16 @@ namespace IceMilkTea.Core
             }
 
 
-            // サービスマネージャのインスタンスを生成するが、nullが返却されるようなことがあれば
-            Current.ServiceManager = Current.CreateGameServiceManager();
-            if (Current.ServiceManager == null)
-            {
-                // ゲームシステムは破壊的な死亡をした
-                throw new InvalidOperationException("GameServiceManager の正しいインスタンスが生成されませんでした。");
-            }
+            // アプリケーションの終了イベントを引っ掛けておく
+            Application.quitting += InternalShutdown;
 
 
             // ハンドラの登録をする
             RegisterHandler();
 
 
-            // サービスマネージャを起動する
+            // サービスマネージャのインスタンスを生成して起動する
+            Current.ServiceManager = new GameServiceManager();
             Current.ServiceManager.Startup();
 
 
@@ -97,8 +106,9 @@ namespace IceMilkTea.Core
         /// </summary>
         private static void InternalShutdown()
         {
-            // ハンドラの解除をする
-            UnregisterHandler();
+            // アプリケーション終了イベントを外す
+            // （PlayerLoopSystemはPlayerLoopSystem自身が登録解除まで担保してくれているのでそのまま）
+            Application.quitting -= InternalShutdown;
 
 
             // サービスマネージャを停止する
@@ -111,63 +121,25 @@ namespace IceMilkTea.Core
         #endregion
 
 
-        #region GameMainロード＆永続ゲームオブジェクト生成
+        #region GameMain基本ロジック関数群
         /// <summary>
-        /// ゲームメインをロードします
+        /// 有効なゲームメインをロードします
         /// </summary>
-        /// <returns>ロードされたゲームメインを返します</returns>
-        private static GameMain LoadGameMain()
+        /// <param name="assetName">ロードするゲームメインアセット名</param>
+        /// <returns>ロードされたゲームメインを返しますが、ロードに失敗した場合は null を返します</returns>
+        private static TGameMain LoadGameMain(string assetName)
         {
-            // 内部で保存されたGameMainのGameMainをロードする
-            var gameMain = Resources.Load<GameMain>("GameMain");
-
-
-            // ロードが出来なかったのなら
-            if (gameMain == null)
+            // 内部で保存されたGameMainのGameMainをロードをしたら
+            var gameMain = Resources.Load<TGameMain>(assetName);
+            if (gameMain != null)
             {
-                // セーフ起動用のゲームメインで立ち上げる
-                return CreateInstance<SafeGameMain>();
+                // リダイレクト先があるならリダイレクト先を返して、ないならそのまま返す
+                return gameMain.Redirect() ?? gameMain;
             }
 
 
-            // リダイレクトするGameMainがあるか聞いて、存在するなら
-            var redirectGameMain = gameMain.Redirect();
-            if (redirectGameMain != null)
-            {
-                // リダイレクトされたGameMainを設定して、ロードされたGameMainを解放
-                gameMain = redirectGameMain;
-                Resources.UnloadUnusedAssets();
-            }
-
-
-            // ロードしたゲームメインを返す
-            return gameMain;
-        }
-
-
-        /// <summary>
-        /// 永続的に存在し続けるゲームオブジェクトを生成します。
-        /// この関数で生成されるゲームオブジェクトはヒエラルキに表示されません。
-        /// また、名前はNewGameObjectとして作られます。
-        /// </summary>
-        /// <returns>生成された永続ゲームオブジェクトを返します</returns>
-        public static GameObject CreatePersistentGameObject()
-        {
-            // "NewGameObject" な見えないゲームオブジェクトを生成して返す
-            return CreatePersistentGameObject("NewGameObject", HideFlags.HideInHierarchy);
-        }
-
-
-        /// <summary>
-        /// 永続的に存在し続けるゲームオブジェクトを生成します。
-        /// この関数で生成されるゲームオブジェクトはヒエラルキに表示されません。
-        /// </summary>
-        /// <param name="name">生成する永続ゲームオブジェクトの名前</param>
-        /// <returns>生成された永続ゲームオブジェクトを返します</returns>
-        public static GameObject CreatePersistentGameObject(string name)
-        {
-            // 見えないゲームオブジェクトを生成して返す
-            return CreatePersistentGameObject(name, HideFlags.HideInHierarchy);
+            // ロードに失敗したのならnullを返す
+            return null;
         }
 
 
@@ -177,15 +149,15 @@ namespace IceMilkTea.Core
         /// <param name="name">生成する永続ゲームオブジェクトの名前</param>
         /// <param name="hideFlags">生成する永続ゲームオブジェクトの隠しフラグ</param>
         /// <returns>生成された永続ゲームオブジェクトを返します</returns>
-        public static GameObject CreatePersistentGameObject(string name, HideFlags hideFlags)
+        private static GameObject CreatePersistentGameObject(string name, HideFlags hideFlags)
         {
             // ゲームオブジェクトを生成する
             var gameObject = new GameObject(name);
 
 
-            // ヒエラルキから姿を消して永続化
+            // 非表示フラグを設定して永続化
             gameObject.hideFlags = hideFlags;
-            UnityEngine.Object.DontDestroyOnLoad(gameObject);
+            DontDestroyOnLoad(gameObject);
 
 
             // トランスフォームを取得して念の為初期値を入れる
@@ -198,45 +170,108 @@ namespace IceMilkTea.Core
             // 作ったゲームオブジェクトを返す
             return gameObject;
         }
-        #endregion
 
 
-        #region イベントハンドラ登録＆解除
         /// <summary>
-        /// GameMainの動作に必要なハンドラの登録処理を行います
+        /// GameMain のゲームループを初期化します
         /// </summary>
-        private static void RegisterHandler()
+        /// <param name="gameMain">ゲームループを制御する GameMain</param>
+        /// <param name="gameMainGameObject">UnityのMonoBehaviourイベントを引き込むゲームオブジェクト</param>
+        private static void InitializeGameLoop(TGameMain gameMain, GameObject gameMainGameObject)
         {
-            // アプリケーションの終了イベントを引っ掛けておく
-            Application.quitting += InternalShutdown;
+            // 各種更新関数のLoopSystemを生成する
+            var mainLoopHead = new ImtPlayerLoopSystem(typeof(ImtGameMainUpdate.GameMainMainLoopHead), gameMain.InternalMainLoopHead);
+            var preFixedUpdate = new ImtPlayerLoopSystem(typeof(ImtGameMainUpdate.GameMainPreFixedUpdate), gameMain.InternalPreFixedUpdate);
+            var postFixedUpdate = new ImtPlayerLoopSystem(typeof(ImtGameMainUpdate.GameMainPostFixedUpdate), gameMain.InternalPostFixedUpdate);
+            var prePhysicsSimulation = new ImtPlayerLoopSystem(typeof(ImtGameMainUpdate.GameMainPrePhysicsSimulation), gameMain.InternalPreFixedUpdate);
+            var postPhysicsSimulation = new ImtPlayerLoopSystem(typeof(ImtGameMainUpdate.GameMainPostPhysicsSimulation), gameMain.InternalPostFixedUpdate);
+            var preWaitForFixedUpdate = new ImtPlayerLoopSystem(typeof(ImtGameMainUpdate.GameMainPreWaitForFixedUpdate), gameMain.InternalPreWaitForFixedUpdate);
+            var postWaitForFixedUpdate = new ImtPlayerLoopSystem(typeof(ImtGameMainUpdate.GameMainPostWaitForFixedUpdate), gameMain.InternalPostWaitForFixedUpdate);
+            var preUpdate = new ImtPlayerLoopSystem(typeof(ImtGameMainUpdate.GameMainPreUpdate), gameMain.InternalPreUpdate);
+            var postUpdate = new ImtPlayerLoopSystem(typeof(ImtGameMainUpdate.GameMainPostUpdate), gameMain.InternalPostUpdate);
+            var preProcessSynchronizationContext = new ImtPlayerLoopSystem(typeof(ImtGameMainUpdate.GameMainPreProcessSynchronizationContext), gameMain.InternalPreProcessSynchronizationContext);
+            var postProcessSynchronizationContext = new ImtPlayerLoopSystem(typeof(ImtGameMainUpdate.GameMainPostProcessSynchronizationContext), gameMain.InternalPostProcessSynchronizationContext);
+            var preAnimation = new ImtPlayerLoopSystem(typeof(ImtGameMainUpdate.GameMainPreAnimation), gameMain.InternalPreAnimation);
+            var postAnimation = new ImtPlayerLoopSystem(typeof(ImtGameMainUpdate.GameMainPostAnimation), gameMain.InternalPostAnimation);
+            var preLateUpdate = new ImtPlayerLoopSystem(typeof(ImtGameMainUpdate.GameMainPreLateUpdate), gameMain.InternalPreLateUpdate);
+            var postLateUpdate = new ImtPlayerLoopSystem(typeof(ImtGameMainUpdate.GameMainPostLateUpdate), gameMain.InternalPostLateUpdate);
+            var preDrawPresent = new ImtPlayerLoopSystem(typeof(ImtGameMainUpdate.GameMainPreDrawPresent), gameMain.InternalPreDrawPresent);
+            var postDrawPresent = new ImtPlayerLoopSystem(typeof(ImtGameMainUpdate.GameMainPostDrawPresent), gameMain.InternalPostDrawPresent);
+            var mainLoopTail = new ImtPlayerLoopSystem(typeof(ImtGameMainUpdate.GameMainMainLoopTail), gameMain.InternalMainLoopTail);
 
 
-            // サービスマネージャの開始と終了のループシステムを生成
-            var startupGameServiceLoopSystem = new ImtPlayerLoopSystem(typeof(GameServiceManagerStartup), Current.ServiceManager.StartupServices);
-            var cleanupGameServiceLoopSystem = new ImtPlayerLoopSystem(typeof(GameServiceManagerCleanup), Current.ServiceManager.CleanupServices);
-
-
-            // ゲームループの開始と終了のタイミングあたりにサービスマネージャのスタートアップとクリーンアップの処理を引っ掛ける
+            // 処理を差し込むためのPlayerLoopSystemを取得して、処理を差し込んで構築する
             var loopSystem = ImtPlayerLoopSystem.GetLastBuildLoopSystem();
-            loopSystem.InsertLoopSystem<Initialization.PlayerUpdateTime>(InsertTiming.AfterInsert, startupGameServiceLoopSystem);
-            loopSystem.InsertLoopSystem<PostLateUpdate.ExecuteGameCenterCallbacks>(InsertTiming.AfterInsert, cleanupGameServiceLoopSystem);
+            loopSystem.InsertLoopSystem<Initialization.PlayerUpdateTime>(InsertTiming.AfterInsert, mainLoopHead);
+            loopSystem.InsertLoopSystem<FixedUpdate.ScriptRunBehaviourFixedUpdate>(InsertTiming.BeforeInsert, preFixedUpdate);
+            loopSystem.InsertLoopSystem<FixedUpdate.ScriptRunBehaviourFixedUpdate>(InsertTiming.AfterInsert, postFixedUpdate);
+            loopSystem.InsertLoopSystem<FixedUpdate.DirectorFixedUpdatePostPhysics>(InsertTiming.BeforeInsert, prePhysicsSimulation);
+            loopSystem.InsertLoopSystem<FixedUpdate.DirectorFixedUpdatePostPhysics>(InsertTiming.AfterInsert, postPhysicsSimulation);
+            loopSystem.InsertLoopSystem<FixedUpdate.ScriptRunDelayedFixedFrameRate>(InsertTiming.BeforeInsert, preWaitForFixedUpdate);
+            loopSystem.InsertLoopSystem<FixedUpdate.ScriptRunDelayedFixedFrameRate>(InsertTiming.AfterInsert, postWaitForFixedUpdate);
+            loopSystem.InsertLoopSystem<Update.ScriptRunBehaviourUpdate>(InsertTiming.BeforeInsert, preUpdate);
+            loopSystem.InsertLoopSystem<Update.ScriptRunBehaviourUpdate>(InsertTiming.AfterInsert, postUpdate);
+            loopSystem.InsertLoopSystem<Update.ScriptRunDelayedTasks>(InsertTiming.BeforeInsert, preProcessSynchronizationContext);
+            loopSystem.InsertLoopSystem<Update.ScriptRunDelayedTasks>(InsertTiming.AfterInsert, postProcessSynchronizationContext);
+            loopSystem.InsertLoopSystem<Update.DirectorUpdate>(InsertTiming.BeforeInsert, preAnimation);
+            loopSystem.InsertLoopSystem<Update.DirectorUpdate>(InsertTiming.AfterInsert, postAnimation);
+            loopSystem.InsertLoopSystem<PreLateUpdate.ScriptRunBehaviourLateUpdate>(InsertTiming.BeforeInsert, preLateUpdate);
+            loopSystem.InsertLoopSystem<PreLateUpdate.ScriptRunBehaviourLateUpdate>(InsertTiming.AfterInsert, postLateUpdate);
+            loopSystem.InsertLoopSystem<PostLateUpdate.PresentAfterDraw>(InsertTiming.BeforeInsert, preDrawPresent);
+            loopSystem.InsertLoopSystem<PostLateUpdate.PresentAfterDraw>(InsertTiming.AfterInsert, postDrawPresent);
+            loopSystem.InsertLoopSystem<PostLateUpdate.ExecuteGameCenterCallbacks>(InsertTiming.AfterInsert, mainLoopTail);
             loopSystem.BuildAndSetUnityPlayerLoop();
         }
+        #endregion
+
+
+        #region GameMain挙動制御関数群
+        /// <summary>
+        /// 起動するGameMainをリダイレクトします。
+        /// IceMilkTeaによって起動されたGameMainから他のGameMainへリダイレクトする場合は、
+        /// この関数をオーバーライドして起動するGameMainのインスタンスを返します。
+        /// </summary>
+        /// <returns>リダイレクトするGameMainがある場合はインスタンスを返しますが、ない場合はnullを返します</returns>
+        protected virtual TGameMain Redirect()
+        {
+            // リダイレクト先GameMainはなし
+            return null;
+        }
 
 
         /// <summary>
-        /// GameMainの動作に必要なハンドラの解除処理を行います
+        /// IceMilkTeaのシステムがこのまま継続して起動するかどうかを判断します
         /// </summary>
-        private static void UnregisterHandler()
+        /// <returns>起動を継続する場合は true を、継続しない場合は false を返します</returns>
+        protected virtual bool Continue()
         {
-            // アプリケーション終了イベントを外す
-            // （PlayerLoopSystemはPlayerLoopSystem自身が登録解除まで担保してくれているのでそのまま）
-            Application.quitting -= InternalShutdown;
+            // 通常は起動を継続する
+            return true;
+        }
+
+
+        /// <summary>
+        /// ゲームの起動処理を行います。
+        /// 主に、ゲームサービスの初期登録や必要な追加モジュールの初期化などを行います。
+        /// </summary>
+        protected virtual void Startup()
+        {
+        }
+
+
+        /// <summary>
+        /// ゲームの終了処理を行います。
+        /// ゲームサービスそのものの終了処理は、サービス側で処理されるべきで、
+        /// この関数では主に、追加モジュールなどの解放やサービス管轄外の解放などを行うべきです。
+        /// </summary>
+        protected virtual void Shutdown()
+        {
         }
         #endregion
 
 
-        #region 内部ゲームループイベント
+        #region ゲームループ関数
+        #region 内部ゲームループ
         private void InternalMainLoopHead()
         {
             MainLoopHead();
@@ -394,69 +429,7 @@ namespace IceMilkTea.Core
         #endregion
 
 
-        #region GameMainイベントハンドラ
-        /// <summary>
-        /// 起動するGameMainをリダイレクトします。
-        /// IceMilkTeaによって起動されたGameMainから他のGameMainへリダイレクトする場合は、
-        /// この関数をオーバーライドして起動するGameMainのインスタンスを返します。
-        /// </summary>
-        /// <returns>リダイレクトするGameMainがある場合はインスタンスを返しますが、ない場合はnullを返します</returns>
-        protected virtual GameMain Redirect()
-        {
-            // リダイレクト先GameMainはなし
-            return null;
-        }
-
-
-        /// <summary>
-        /// IceMilkTeaのシステムがこのまま継続して起動するかどうかを判断します
-        /// </summary>
-        /// <returns>起動を継続する場合は true を、継続しない場合は false を返します</returns>
-        protected virtual bool Continue()
-        {
-            // 通常は起動を継続する
-            return true;
-        }
-
-
-        /// <summary>
-        /// Unityで動作する同期コンテキストをインストールします。
-        /// もし、同期コンテキストをカスタムでインストールする場合は UninstallSynchronizationContext() 関数で正しくアンインストールしてください
-        /// </summary>
-        protected virtual void InstallSynchronizationContext()
-        {
-        }
-
-
-        /// <summary>
-        /// InstallSynchronizationContext() 関数によってインストールされた同期コンテキストをアンインストールします
-        /// </summary>
-        protected virtual void UninstallSynchronizationContext()
-        {
-        }
-
-
-        /// <summary>
-        /// ゲームの起動処理を行います。
-        /// 主に、ゲームサービスの初期登録や必要な追加モジュールの初期化などを行います。
-        /// </summary>
-        protected virtual void Startup()
-        {
-        }
-
-
-        /// <summary>
-        /// ゲームの終了処理を行います。
-        /// ゲームサービスそのものの終了処理は、サービス側で処理されるべきで、
-        /// この関数では主に、追加モジュールなどの解放やサービス管轄外の解放などを行うべきです。
-        /// </summary>
-        protected virtual void Shutdown()
-        {
-        }
-        #endregion
-
-
-        #region オーバーライド可能なゲームループイベント
+        #region オーバーライド可能なゲームループ
         protected virtual void MainLoopHead()
         {
         }
@@ -585,6 +558,7 @@ namespace IceMilkTea.Core
         protected virtual void OnEndOfFrame()
         {
         }
+        #endregion
         #endregion
 
 
@@ -843,46 +817,6 @@ namespace IceMilkTea.Core
         /// </summary>
         protected internal virtual void Startup()
         {
-            // 各種更新関数のLoopSystemを生成する
-            var mainLoopHead = new ImtPlayerLoopSystem(typeof(GameServiceUpdate.GameServiceMainLoopHead), () => DoUpdateService(GameServiceUpdateTiming.MainLoopHead));
-            var preFixedUpdate = new ImtPlayerLoopSystem(typeof(GameServiceUpdate.GameServicePreFixedUpdate), () => DoUpdateService(GameServiceUpdateTiming.PreFixedUpdate));
-            var postFixedUpdate = new ImtPlayerLoopSystem(typeof(GameServiceUpdate.GameServicePostFixedUpdate), () => DoUpdateService(GameServiceUpdateTiming.PostFixedUpdate));
-            var postPhysicsSimulation = new ImtPlayerLoopSystem(typeof(GameServiceUpdate.GameServicePostPhysicsSimulation), () => DoUpdateService(GameServiceUpdateTiming.PostPhysicsSimulation));
-            var postWaitForFixedUpdate = new ImtPlayerLoopSystem(typeof(GameServiceUpdate.GameServicePostWaitForFixedUpdate), () => DoUpdateService(GameServiceUpdateTiming.PostWaitForFixedUpdate));
-            var preUpdate = new ImtPlayerLoopSystem(typeof(GameServiceUpdate.GameServicePreUpdate), () => DoUpdateService(GameServiceUpdateTiming.PreUpdate));
-            var postUpdate = new ImtPlayerLoopSystem(typeof(GameServiceUpdate.GameServicePostUpdate), () => DoUpdateService(GameServiceUpdateTiming.PostUpdate));
-            var preProcessSynchronizationContext = new ImtPlayerLoopSystem(typeof(GameServiceUpdate.GameServicePreProcessSynchronizationContext), () => DoUpdateService(GameServiceUpdateTiming.PreProcessSynchronizationContext));
-            var postProcessSynchronizationContext = new ImtPlayerLoopSystem(typeof(GameServiceUpdate.GameServicePostProcessSynchronizationContext), () => DoUpdateService(GameServiceUpdateTiming.PostProcessSynchronizationContext));
-            var preAnimation = new ImtPlayerLoopSystem(typeof(GameServiceUpdate.GameServicePreAnimation), () => DoUpdateService(GameServiceUpdateTiming.PreAnimation));
-            var postAnimation = new ImtPlayerLoopSystem(typeof(GameServiceUpdate.GameServicePostAnimation), () => DoUpdateService(GameServiceUpdateTiming.PostAnimation));
-            var preLateUpdate = new ImtPlayerLoopSystem(typeof(GameServiceUpdate.GameServicePreLateUpdate), () => DoUpdateService(GameServiceUpdateTiming.PreLateUpdate));
-            var postLateUpdate = new ImtPlayerLoopSystem(typeof(GameServiceUpdate.GameServicePostLateUpdate), () => DoUpdateService(GameServiceUpdateTiming.PostLateUpdate));
-            var preDrawPresent = new ImtPlayerLoopSystem(typeof(GameServiceUpdate.GameServicePreDrawPresent), () => DoUpdateService(GameServiceUpdateTiming.PreDrawPresent));
-            var postDrawPresent = new ImtPlayerLoopSystem(typeof(GameServiceUpdate.GameServicePostDrawPresent), () => DoUpdateService(GameServiceUpdateTiming.PostDrawPresent));
-            var mainLoopTail = new ImtPlayerLoopSystem(typeof(GameServiceUpdate.GameServiceMainLoopTail), () => DoUpdateService(GameServiceUpdateTiming.MainLoopTail));
-
-
-            // 処理を差し込むためのPlayerLoopSystemを取得して、処理を差し込んで構築する
-            var loopSystem = ImtPlayerLoopSystem.GetLastBuildLoopSystem();
-            loopSystem.InsertLoopSystem<GameMain.GameServiceManagerStartup>(InsertTiming.AfterInsert, mainLoopHead);
-            loopSystem.InsertLoopSystem<FixedUpdate.ScriptRunBehaviourFixedUpdate>(InsertTiming.BeforeInsert, preFixedUpdate);
-            loopSystem.InsertLoopSystem<FixedUpdate.ScriptRunBehaviourFixedUpdate>(InsertTiming.AfterInsert, postFixedUpdate);
-            loopSystem.InsertLoopSystem<FixedUpdate.DirectorFixedUpdatePostPhysics>(InsertTiming.AfterInsert, postPhysicsSimulation);
-            loopSystem.InsertLoopSystem<FixedUpdate.ScriptRunDelayedFixedFrameRate>(InsertTiming.AfterInsert, postWaitForFixedUpdate);
-            loopSystem.InsertLoopSystem<Update.ScriptRunBehaviourUpdate>(InsertTiming.BeforeInsert, preUpdate);
-            loopSystem.InsertLoopSystem<Update.ScriptRunBehaviourUpdate>(InsertTiming.AfterInsert, postUpdate);
-            loopSystem.InsertLoopSystem<Update.ScriptRunDelayedTasks>(InsertTiming.BeforeInsert, preProcessSynchronizationContext);
-            loopSystem.InsertLoopSystem<Update.ScriptRunDelayedTasks>(InsertTiming.AfterInsert, postProcessSynchronizationContext);
-            loopSystem.InsertLoopSystem<Update.DirectorUpdate>(InsertTiming.BeforeInsert, preAnimation);
-            loopSystem.InsertLoopSystem<Update.DirectorUpdate>(InsertTiming.AfterInsert, postAnimation);
-            loopSystem.InsertLoopSystem<PreLateUpdate.ScriptRunBehaviourLateUpdate>(InsertTiming.BeforeInsert, preLateUpdate);
-            loopSystem.InsertLoopSystem<PreLateUpdate.ScriptRunBehaviourLateUpdate>(InsertTiming.AfterInsert, postLateUpdate);
-            loopSystem.InsertLoopSystem<PostLateUpdate.PresentAfterDraw>(InsertTiming.BeforeInsert, preDrawPresent);
-            loopSystem.InsertLoopSystem<PostLateUpdate.PresentAfterDraw>(InsertTiming.AfterInsert, postDrawPresent);
-            loopSystem.InsertLoopSystem<GameMain.GameServiceManagerCleanup>(InsertTiming.BeforeInsert, mainLoopTail);
-            loopSystem.BuildAndSetUnityPlayerLoop();
-
-
             // 永続ゲームオブジェクトを生成してアプリケーションのフォーカス、ポーズのハンドラを登録する
             var persistentGameObject = ImtUnityUtility.CreatePersistentGameObject();
             var eventBridge = MonoBehaviourEventBridge.Attach(persistentGameObject);
@@ -1524,6 +1458,292 @@ namespace IceMilkTea.Core
 
 
 
+    #region ImtSynchronizationContext
+    /// <summary>
+    /// IceMilkTea 自身が提供する同期コンテキストクラスです。
+    /// 独立したスレッドの同期コンテキストとして利用したり、特定コード範囲の同期コンテキストとして利用出来ます。
+    /// </summary>
+    public class ImtSynchronizationContext : SynchronizationContext, IDisposable
+    {
+        /// <summary>
+        /// 同期コンテキストに送られてきたコールバックを、メッセージとして保持する構造体です。
+        /// </summary>
+        private struct Message
+        {
+            // メンバ変数定義
+            private SendOrPostCallback callback;
+            private ManualResetEvent waitHandle;
+            private object state;
+
+
+
+            /// <summary>
+            /// Message のインスタンスを初期化します。
+            /// </summary>
+            /// <param name="callback">呼び出すべきコールバック関数</param>
+            /// <param name="state">コールバックに渡すオブジェクト</param>
+            /// <param name="waitHandle">コールバックの呼び出しを待機するために、利用する待機ハンドル</param>
+            public Message(SendOrPostCallback callback, object state, ManualResetEvent waitHandle)
+            {
+                // メンバの初期化
+                this.callback = callback;
+                this.waitHandle = waitHandle;
+                this.state = state;
+            }
+
+
+            /// <summary>
+            /// メッセージに設定されたコールバックを呼び出します。
+            /// また、待機ハンドルが設定されている場合は、待機ハンドルのシグナルを設定します。
+            /// </summary>
+            public void Invoke()
+            {
+                // コールバックを叩く
+                callback(state);
+
+
+                // もし待機ハンドルがあるなら
+                if (waitHandle != null)
+                {
+                    // シグナルを設定する
+                    waitHandle.Set();
+                }
+            }
+
+
+            /// <summary>
+            /// このメッセージを管理していた同期コンテキストが、何かの理由で管理できなくなった場合
+            /// このメッセージを指定された同期コンテキストに、再ポストします。
+            /// また、送信メッセージの場合は、直ちに処理され待機ハンドルのシグナルが設定されます。
+            /// </summary>
+            /// <param name="rePostTargetContext">再ポスト先の同期コンテキスト</param>
+            public void Failover(SynchronizationContext rePostTargetContext)
+            {
+                // 待機ハンドルが存在するなら
+                if (waitHandle != null)
+                {
+                    // コールバックを叩いてシグナルを設定する
+                    callback(state);
+                    waitHandle.Set();
+                    return;
+                }
+
+
+                // 再ポスト先同期コンテキストにポストする
+                rePostTargetContext.Post(callback, state);
+            }
+        }
+
+
+
+        // 定数定義
+        public const int DefaultMessageQueueCapacity = 32;
+
+        // メンバ変数定義
+        private SynchronizationContext previousContext;
+        private Queue<Message> messageQueue;
+        private int myStartupThreadId;
+        private bool disposed;
+
+
+
+        /// <summary>
+        /// ImtSynchronizationContext のインスタンスを初期化します。
+        /// </summary>
+        /// <remarks>
+        /// この同期コンテキストは messagePumpHandler が呼び出されない限りメッセージを蓄え続けます。
+        /// メッセージを処理するためには、必ず messagePumpHandler を定期的に呼び出してください。
+        /// </remarks>
+        /// <param name="messagePumpHandler">この同期コンテキストに送られてきたメッセージを処理するための、メッセージポンプハンドラを受け取ります</param>
+        public ImtSynchronizationContext(out Action messagePumpHandler)
+        {
+            // メンバの初期化と、メッセージ処理関数を伝える
+            previousContext = AsyncOperationManager.SynchronizationContext;
+            messageQueue = new Queue<Message>(DefaultMessageQueueCapacity);
+            myStartupThreadId = Thread.CurrentThread.ManagedThreadId;
+            messagePumpHandler = DoProcessMessage;
+        }
+
+
+        /// <summary>
+        /// ImtSynchronizationContext のファイナライザです。
+        /// </summary>
+        ~ImtSynchronizationContext()
+        {
+            // ファイナライザからのDispose呼び出し
+            Dispose(false);
+        }
+
+
+        /// <summary>
+        /// リソースを解放します。また、解放する際にメッセージが残っていた場合は
+        /// この同期コンテキストが生成される前に存在していた、同期コンテキストに再ポストされ、同期コンテキストが再設定されます。
+        /// </summary>
+        public void Dispose()
+        {
+            // DisposeからのDispose呼び出し
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+
+        /// <summary>
+        /// 実際のリソース解放を行います。
+        /// </summary>
+        /// <param name="disposing">マネージ解放の場合は true を、アンマネージ解放なら false を指定</param>
+        protected virtual void Dispose(bool disposing)
+        {
+            // 既に解放済みなら
+            if (disposed)
+            {
+                // 終了
+                return;
+            }
+
+
+            // もし現在の同期コンテキストが自身なら
+            if (AsyncOperationManager.SynchronizationContext == this)
+            {
+                // 同期コンテキストを、インスタンス生成時に覚えたコンテキストに戻す
+                AsyncOperationManager.SynchronizationContext = previousContext;
+            }
+
+
+            // メッセージキューをロック
+            lock (messageQueue)
+            {
+                // 全てのメッセージを処理するまでループ
+                while (messageQueue.Count > 0)
+                {
+                    // 一つ前の同期コンテキストにフェイルオーバーする
+                    messageQueue.Dequeue().Failover(previousContext);
+                }
+            }
+
+
+            // 解放済みマーク
+            disposed = true;
+        }
+
+
+        /// <summary>
+        /// ImtSynchronizationContext のインスタンスを生成と同時に、同期コンテキストの設定も行います。
+        /// </summary>
+        /// <param name="messagePumpHandler">コンストラクタの messagePumpHandler に渡す参照</param>
+        /// <returns>インスタンスの生成と設定が終わった、同期コンテキストを返します。</returns>
+        public static ImtSynchronizationContext Install(out Action messagePumpHandler)
+        {
+            // 新しい同期コンテキストのインスタンスを生成して、設定した後に返す
+            var context = new ImtSynchronizationContext(out messagePumpHandler);
+            AsyncOperationManager.SynchronizationContext = context;
+            return context;
+        }
+
+
+        /// <summary>
+        /// 同期メッセージを送信します。
+        /// </summary>
+        /// <param name="callback">呼び出すべきメッセージのコールバック</param>
+        /// <param name="state">コールバックに渡してほしいオブジェクト</param>
+        /// <exception cref="ObjectDisposedException">既にオブジェクトが解放済みです</exception>
+        public override void Send(SendOrPostCallback callback, object state)
+        {
+            // 解放済み例外送出関数を叩く
+            ThrowIfDisposed();
+
+
+            // 同じスレッドからの送信なら
+            if (Thread.CurrentThread.ManagedThreadId == myStartupThreadId)
+            {
+                // 直ちにコールバックを叩いて終了
+                callback(state);
+                return;
+            }
+
+
+            // メッセージ処理待ち用同期プリミティブを用意
+            using (var waitHandle = new ManualResetEvent(false))
+            {
+                // メッセージキューをロック
+                lock (messageQueue)
+                {
+                    // 処理して欲しいコールバックを登録
+                    messageQueue.Enqueue(new Message(callback, state, waitHandle));
+                }
+
+
+                // 登録したコールバックが処理されるまで待機
+                waitHandle.WaitOne();
+            }
+        }
+
+
+        /// <summary>
+        /// 非同期メッセージをポストします。
+        /// </summary>
+        /// <param name="callback">呼び出すべきメッセージのコールバック</param>
+        /// <param name="state">コールバックに渡してほしいオブジェクト</param>
+        /// <exception cref="ObjectDisposedException">既にオブジェクトが解放済みです</exception>
+        public override void Post(SendOrPostCallback callback, object state)
+        {
+            // 解放済み例外送出関数を叩く
+            ThrowIfDisposed();
+
+
+            // メッセージキューをロック
+            lock (messageQueue)
+            {
+                // 処理して欲しいコールバックを登録
+                messageQueue.Enqueue(new Message(callback, state, null));
+            }
+        }
+
+
+        /// <summary>
+        /// 同期コンテキストに、送られてきたメッセージを処理します。
+        /// </summary>
+        /// <exception cref="ObjectDisposedException">既にオブジェクトが解放済みです</exception>
+        private void DoProcessMessage()
+        {
+            // 解放済み例外送出関数を叩く
+            ThrowIfDisposed();
+
+
+            // メッセージキューをロック
+            lock (messageQueue)
+            {
+                // メッセージ処理中にポストされても次回になるよう、今回処理するべきメッセージ件数の取得
+                var processCount = messageQueue.Count;
+
+
+                // 今回処理するべきメッセージの件数分だけループ
+                for (int i = 0; i < processCount; ++i)
+                {
+                    // メッセージを呼ぶ
+                    messageQueue.Dequeue().Invoke();
+                }
+            }
+        }
+
+
+        /// <summary>
+        /// 解放済みの場合に、例外を送出します。
+        /// </summary>
+        /// <exception cref="ObjectDisposedException">既にオブジェクトが解放済みです</exception>
+        private void ThrowIfDisposed()
+        {
+            // 解放済みなら
+            if (disposed)
+            {
+                // 解放済み例外を投げる
+                throw new ObjectDisposedException(null);
+            }
+        }
+    }
+    #endregion
+
+
+
     #region Exception and Attribute
     /// <summary>
     /// サービスが既に存在している場合にスローされる例外クラスです
@@ -1591,26 +1811,6 @@ namespace IceMilkTea.Core
 
 
     #region Definitions
-    /// <summary>
-    /// 起動するべきGameMainが見つからなかった場合や、起動できない場合において
-    /// 代わりに起動するための GameMain クラスです。
-    /// </summary>
-    [HideCreateGameMainAssetMenu]
-    internal class SafeGameMain : GameMain
-    {
-        /// <summary>
-        /// セーフ起動時のIceMilkTeaは、起動を継続しないようにします。
-        /// </summary>
-        /// <returns>この関数は常にfalseを返します</returns>
-        protected override bool Continue()
-        {
-            // 起動を止めるようにする
-            return false;
-        }
-    }
-
-
-
     /// <summary>
     /// ゲームサービスが動作を開始するための情報を保持する構造体です
     /// </summary>
@@ -2349,292 +2549,6 @@ namespace IceMilkTea.Core
             }
         }
         #endregion
-    }
-    #endregion
-
-
-
-    #region ImtSynchronizationContext
-    /// <summary>
-    /// IceMilkTea 自身が提供する同期コンテキストクラスです。
-    /// 独立したスレッドの同期コンテキストとして利用したり、特定コード範囲の同期コンテキストとして利用出来ます。
-    /// </summary>
-    public class ImtSynchronizationContext : SynchronizationContext, IDisposable
-    {
-        /// <summary>
-        /// 同期コンテキストに送られてきたコールバックを、メッセージとして保持する構造体です。
-        /// </summary>
-        private struct Message
-        {
-            // メンバ変数定義
-            private SendOrPostCallback callback;
-            private ManualResetEvent waitHandle;
-            private object state;
-
-
-
-            /// <summary>
-            /// Message のインスタンスを初期化します。
-            /// </summary>
-            /// <param name="callback">呼び出すべきコールバック関数</param>
-            /// <param name="state">コールバックに渡すオブジェクト</param>
-            /// <param name="waitHandle">コールバックの呼び出しを待機するために、利用する待機ハンドル</param>
-            public Message(SendOrPostCallback callback, object state, ManualResetEvent waitHandle)
-            {
-                // メンバの初期化
-                this.callback = callback;
-                this.waitHandle = waitHandle;
-                this.state = state;
-            }
-
-
-            /// <summary>
-            /// メッセージに設定されたコールバックを呼び出します。
-            /// また、待機ハンドルが設定されている場合は、待機ハンドルのシグナルを設定します。
-            /// </summary>
-            public void Invoke()
-            {
-                // コールバックを叩く
-                callback(state);
-
-
-                // もし待機ハンドルがあるなら
-                if (waitHandle != null)
-                {
-                    // シグナルを設定する
-                    waitHandle.Set();
-                }
-            }
-
-
-            /// <summary>
-            /// このメッセージを管理していた同期コンテキストが、何かの理由で管理できなくなった場合
-            /// このメッセージを指定された同期コンテキストに、再ポストします。
-            /// また、送信メッセージの場合は、直ちに処理され待機ハンドルのシグナルが設定されます。
-            /// </summary>
-            /// <param name="rePostTargetContext">再ポスト先の同期コンテキスト</param>
-            public void Failover(SynchronizationContext rePostTargetContext)
-            {
-                // 待機ハンドルが存在するなら
-                if (waitHandle != null)
-                {
-                    // コールバックを叩いてシグナルを設定する
-                    callback(state);
-                    waitHandle.Set();
-                    return;
-                }
-
-
-                // 再ポスト先同期コンテキストにポストする
-                rePostTargetContext.Post(callback, state);
-            }
-        }
-
-
-
-        // 定数定義
-        public const int DefaultMessageQueueCapacity = 32;
-
-        // メンバ変数定義
-        private SynchronizationContext previousContext;
-        private Queue<Message> messageQueue;
-        private int myStartupThreadId;
-        private bool disposed;
-
-
-
-        /// <summary>
-        /// ImtSynchronizationContext のインスタンスを初期化します。
-        /// </summary>
-        /// <remarks>
-        /// この同期コンテキストは messagePumpHandler が呼び出されない限りメッセージを蓄え続けます。
-        /// メッセージを処理するためには、必ず messagePumpHandler を定期的に呼び出してください。
-        /// </remarks>
-        /// <param name="messagePumpHandler">この同期コンテキストに送られてきたメッセージを処理するための、メッセージポンプハンドラを受け取ります</param>
-        public ImtSynchronizationContext(out Action messagePumpHandler)
-        {
-            // メンバの初期化と、メッセージ処理関数を伝える
-            previousContext = AsyncOperationManager.SynchronizationContext;
-            messageQueue = new Queue<Message>(DefaultMessageQueueCapacity);
-            myStartupThreadId = Thread.CurrentThread.ManagedThreadId;
-            messagePumpHandler = DoProcessMessage;
-        }
-
-
-        /// <summary>
-        /// ImtSynchronizationContext のファイナライザです。
-        /// </summary>
-        ~ImtSynchronizationContext()
-        {
-            // ファイナライザからのDispose呼び出し
-            Dispose(false);
-        }
-
-
-        /// <summary>
-        /// リソースを解放します。また、解放する際にメッセージが残っていた場合は
-        /// この同期コンテキストが生成される前に存在していた、同期コンテキストに再ポストされ、同期コンテキストが再設定されます。
-        /// </summary>
-        public void Dispose()
-        {
-            // DisposeからのDispose呼び出し
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-
-        /// <summary>
-        /// 実際のリソース解放を行います。
-        /// </summary>
-        /// <param name="disposing">マネージ解放の場合は true を、アンマネージ解放なら false を指定</param>
-        protected virtual void Dispose(bool disposing)
-        {
-            // 既に解放済みなら
-            if (disposed)
-            {
-                // 終了
-                return;
-            }
-
-
-            // もし現在の同期コンテキストが自身なら
-            if (AsyncOperationManager.SynchronizationContext == this)
-            {
-                // 同期コンテキストを、インスタンス生成時に覚えたコンテキストに戻す
-                AsyncOperationManager.SynchronizationContext = previousContext;
-            }
-
-
-            // メッセージキューをロック
-            lock (messageQueue)
-            {
-                // 全てのメッセージを処理するまでループ
-                while (messageQueue.Count > 0)
-                {
-                    // 一つ前の同期コンテキストにフェイルオーバーする
-                    messageQueue.Dequeue().Failover(previousContext);
-                }
-            }
-
-
-            // 解放済みマーク
-            disposed = true;
-        }
-
-
-        /// <summary>
-        /// ImtSynchronizationContext のインスタンスを生成と同時に、同期コンテキストの設定も行います。
-        /// </summary>
-        /// <param name="messagePumpHandler">コンストラクタの messagePumpHandler に渡す参照</param>
-        /// <returns>インスタンスの生成と設定が終わった、同期コンテキストを返します。</returns>
-        public static ImtSynchronizationContext Install(out Action messagePumpHandler)
-        {
-            // 新しい同期コンテキストのインスタンスを生成して、設定した後に返す
-            var context = new ImtSynchronizationContext(out messagePumpHandler);
-            AsyncOperationManager.SynchronizationContext = context;
-            return context;
-        }
-
-
-        /// <summary>
-        /// 同期メッセージを送信します。
-        /// </summary>
-        /// <param name="callback">呼び出すべきメッセージのコールバック</param>
-        /// <param name="state">コールバックに渡してほしいオブジェクト</param>
-        /// <exception cref="ObjectDisposedException">既にオブジェクトが解放済みです</exception>
-        public override void Send(SendOrPostCallback callback, object state)
-        {
-            // 解放済み例外送出関数を叩く
-            ThrowIfDisposed();
-
-
-            // 同じスレッドからの送信なら
-            if (Thread.CurrentThread.ManagedThreadId == myStartupThreadId)
-            {
-                // 直ちにコールバックを叩いて終了
-                callback(state);
-                return;
-            }
-
-
-            // メッセージ処理待ち用同期プリミティブを用意
-            using (var waitHandle = new ManualResetEvent(false))
-            {
-                // メッセージキューをロック
-                lock (messageQueue)
-                {
-                    // 処理して欲しいコールバックを登録
-                    messageQueue.Enqueue(new Message(callback, state, waitHandle));
-                }
-
-
-                // 登録したコールバックが処理されるまで待機
-                waitHandle.WaitOne();
-            }
-        }
-
-
-        /// <summary>
-        /// 非同期メッセージをポストします。
-        /// </summary>
-        /// <param name="callback">呼び出すべきメッセージのコールバック</param>
-        /// <param name="state">コールバックに渡してほしいオブジェクト</param>
-        /// <exception cref="ObjectDisposedException">既にオブジェクトが解放済みです</exception>
-        public override void Post(SendOrPostCallback callback, object state)
-        {
-            // 解放済み例外送出関数を叩く
-            ThrowIfDisposed();
-
-
-            // メッセージキューをロック
-            lock (messageQueue)
-            {
-                // 処理して欲しいコールバックを登録
-                messageQueue.Enqueue(new Message(callback, state, null));
-            }
-        }
-
-
-        /// <summary>
-        /// 同期コンテキストに、送られてきたメッセージを処理します。
-        /// </summary>
-        /// <exception cref="ObjectDisposedException">既にオブジェクトが解放済みです</exception>
-        private void DoProcessMessage()
-        {
-            // 解放済み例外送出関数を叩く
-            ThrowIfDisposed();
-
-
-            // メッセージキューをロック
-            lock (messageQueue)
-            {
-                // メッセージ処理中にポストされても次回になるよう、今回処理するべきメッセージ件数の取得
-                var processCount = messageQueue.Count;
-
-
-                // 今回処理するべきメッセージの件数分だけループ
-                for (int i = 0; i < processCount; ++i)
-                {
-                    // メッセージを呼ぶ
-                    messageQueue.Dequeue().Invoke();
-                }
-            }
-        }
-
-
-        /// <summary>
-        /// 解放済みの場合に、例外を送出します。
-        /// </summary>
-        /// <exception cref="ObjectDisposedException">既にオブジェクトが解放済みです</exception>
-        private void ThrowIfDisposed()
-        {
-            // 解放済みなら
-            if (disposed)
-            {
-                // 解放済み例外を投げる
-                throw new ObjectDisposedException(null);
-            }
-        }
     }
     #endregion
 }
