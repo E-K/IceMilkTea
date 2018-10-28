@@ -96,9 +96,9 @@ namespace IceMilkTea.Profiler
 
             // Unityの実行ループにパフォーマンスモニタが動くべき場所に更新関数を差し込む
             var rootLoopSystem = ImtPlayerLoopSystem.GetLastBuildLoopSystem();
-            rootLoopSystem.InsertLoopSystem<Initialization.PlayerUpdateTime, StartProfile>(InsertTiming.AfterInsert, StartProfiler);
-            rootLoopSystem.InsertLoopSystem<PostLateUpdate.PresentAfterDraw, EndProfile>(InsertTiming.BeforeInsert, EndProfiler);
-            rootLoopSystem.InsertLoopSystem<PostLateUpdate.PresentAfterDraw, DrawProfile>(InsertTiming.BeforeInsert, DrawProfiler);
+            rootLoopSystem.InsertLoopSystem<Initialization.PlayerUpdateTime, StartProfile>(ImtPlayerLoopSystem.InsertTiming.AfterInsert, StartProfiler);
+            rootLoopSystem.InsertLoopSystem<PostLateUpdate.PresentAfterDraw, EndProfile>(ImtPlayerLoopSystem.InsertTiming.BeforeInsert, EndProfiler);
+            rootLoopSystem.InsertLoopSystem<PostLateUpdate.PresentAfterDraw, DrawProfile>(ImtPlayerLoopSystem.InsertTiming.BeforeInsert, DrawProfiler);
             rootLoopSystem.BuildAndSetUnityPlayerLoop();
 
 

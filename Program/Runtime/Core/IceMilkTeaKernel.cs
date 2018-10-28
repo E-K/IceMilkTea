@@ -204,24 +204,24 @@ namespace IceMilkTea.Core
 
             // 処理を差し込むためのPlayerLoopSystemを取得して、処理を差し込んで構築する
             var loopSystem = ImtPlayerLoopSystem.GetLastBuildLoopSystem();
-            loopSystem.InsertLoopSystem<Initialization.PlayerUpdateTime>(InsertTiming.AfterInsert, mainLoopHead);
-            loopSystem.InsertLoopSystem<FixedUpdate.ScriptRunBehaviourFixedUpdate>(InsertTiming.BeforeInsert, preFixedUpdate);
-            loopSystem.InsertLoopSystem<FixedUpdate.ScriptRunBehaviourFixedUpdate>(InsertTiming.AfterInsert, postFixedUpdate);
-            loopSystem.InsertLoopSystem<FixedUpdate.DirectorFixedUpdatePostPhysics>(InsertTiming.BeforeInsert, prePhysicsSimulation);
-            loopSystem.InsertLoopSystem<FixedUpdate.DirectorFixedUpdatePostPhysics>(InsertTiming.AfterInsert, postPhysicsSimulation);
-            loopSystem.InsertLoopSystem<FixedUpdate.ScriptRunDelayedFixedFrameRate>(InsertTiming.BeforeInsert, preWaitForFixedUpdate);
-            loopSystem.InsertLoopSystem<FixedUpdate.ScriptRunDelayedFixedFrameRate>(InsertTiming.AfterInsert, postWaitForFixedUpdate);
-            loopSystem.InsertLoopSystem<Update.ScriptRunBehaviourUpdate>(InsertTiming.BeforeInsert, preUpdate);
-            loopSystem.InsertLoopSystem<Update.ScriptRunBehaviourUpdate>(InsertTiming.AfterInsert, postUpdate);
-            loopSystem.InsertLoopSystem<Update.ScriptRunDelayedTasks>(InsertTiming.BeforeInsert, preProcessSynchronizationContext);
-            loopSystem.InsertLoopSystem<Update.ScriptRunDelayedTasks>(InsertTiming.AfterInsert, postProcessSynchronizationContext);
-            loopSystem.InsertLoopSystem<Update.DirectorUpdate>(InsertTiming.BeforeInsert, preAnimation);
-            loopSystem.InsertLoopSystem<Update.DirectorUpdate>(InsertTiming.AfterInsert, postAnimation);
-            loopSystem.InsertLoopSystem<PreLateUpdate.ScriptRunBehaviourLateUpdate>(InsertTiming.BeforeInsert, preLateUpdate);
-            loopSystem.InsertLoopSystem<PreLateUpdate.ScriptRunBehaviourLateUpdate>(InsertTiming.AfterInsert, postLateUpdate);
-            loopSystem.InsertLoopSystem<PostLateUpdate.PresentAfterDraw>(InsertTiming.BeforeInsert, preDrawPresent);
-            loopSystem.InsertLoopSystem<PostLateUpdate.PresentAfterDraw>(InsertTiming.AfterInsert, postDrawPresent);
-            loopSystem.InsertLoopSystem<PostLateUpdate.ExecuteGameCenterCallbacks>(InsertTiming.AfterInsert, mainLoopTail);
+            loopSystem.InsertLoopSystem<Initialization.PlayerUpdateTime>(ImtPlayerLoopSystem.InsertTiming.AfterInsert, mainLoopHead);
+            loopSystem.InsertLoopSystem<FixedUpdate.ScriptRunBehaviourFixedUpdate>(ImtPlayerLoopSystem.InsertTiming.BeforeInsert, preFixedUpdate);
+            loopSystem.InsertLoopSystem<FixedUpdate.ScriptRunBehaviourFixedUpdate>(ImtPlayerLoopSystem.InsertTiming.AfterInsert, postFixedUpdate);
+            loopSystem.InsertLoopSystem<FixedUpdate.DirectorFixedUpdatePostPhysics>(ImtPlayerLoopSystem.InsertTiming.BeforeInsert, prePhysicsSimulation);
+            loopSystem.InsertLoopSystem<FixedUpdate.DirectorFixedUpdatePostPhysics>(ImtPlayerLoopSystem.InsertTiming.AfterInsert, postPhysicsSimulation);
+            loopSystem.InsertLoopSystem<FixedUpdate.ScriptRunDelayedFixedFrameRate>(ImtPlayerLoopSystem.InsertTiming.BeforeInsert, preWaitForFixedUpdate);
+            loopSystem.InsertLoopSystem<FixedUpdate.ScriptRunDelayedFixedFrameRate>(ImtPlayerLoopSystem.InsertTiming.AfterInsert, postWaitForFixedUpdate);
+            loopSystem.InsertLoopSystem<Update.ScriptRunBehaviourUpdate>(ImtPlayerLoopSystem.InsertTiming.BeforeInsert, preUpdate);
+            loopSystem.InsertLoopSystem<Update.ScriptRunBehaviourUpdate>(ImtPlayerLoopSystem.InsertTiming.AfterInsert, postUpdate);
+            loopSystem.InsertLoopSystem<Update.ScriptRunDelayedTasks>(ImtPlayerLoopSystem.InsertTiming.BeforeInsert, preProcessSynchronizationContext);
+            loopSystem.InsertLoopSystem<Update.ScriptRunDelayedTasks>(ImtPlayerLoopSystem.InsertTiming.AfterInsert, postProcessSynchronizationContext);
+            loopSystem.InsertLoopSystem<Update.DirectorUpdate>(ImtPlayerLoopSystem.InsertTiming.BeforeInsert, preAnimation);
+            loopSystem.InsertLoopSystem<Update.DirectorUpdate>(ImtPlayerLoopSystem.InsertTiming.AfterInsert, postAnimation);
+            loopSystem.InsertLoopSystem<PreLateUpdate.ScriptRunBehaviourLateUpdate>(ImtPlayerLoopSystem.InsertTiming.BeforeInsert, preLateUpdate);
+            loopSystem.InsertLoopSystem<PreLateUpdate.ScriptRunBehaviourLateUpdate>(ImtPlayerLoopSystem.InsertTiming.AfterInsert, postLateUpdate);
+            loopSystem.InsertLoopSystem<PostLateUpdate.PresentAfterDraw>(ImtPlayerLoopSystem.InsertTiming.BeforeInsert, preDrawPresent);
+            loopSystem.InsertLoopSystem<PostLateUpdate.PresentAfterDraw>(ImtPlayerLoopSystem.InsertTiming.AfterInsert, postDrawPresent);
+            loopSystem.InsertLoopSystem<PostLateUpdate.ExecuteGameCenterCallbacks>(ImtPlayerLoopSystem.InsertTiming.AfterInsert, mainLoopTail);
             loopSystem.BuildAndSetUnityPlayerLoop();
 
 
@@ -246,6 +246,10 @@ namespace IceMilkTea.Core
             Camera.onPreCull -= gameMain.InternalCameraPreCulling;
             Camera.onPreRender -= gameMain.InternalCameraPreRendering;
             Camera.onPostRender -= gameMain.InternalCameraPostRendering;
+
+
+            // Unityデフォルトのループシステムを復元する
+            ImtPlayerLoopSystem.RestoreUnityDefaultLoopSystem();
         }
         #endregion
 
@@ -2066,34 +2070,30 @@ namespace IceMilkTea.Core
 
     #region ImtPlayerLoopSystem
     /// <summary>
-    /// ループシステムの挿入をする時、対象の型に対して挿入するタイミングを指示します
-    /// </summary>
-    public enum InsertTiming
-    {
-        /// <summary>
-        /// 対象の前に挿入を指示します
-        /// </summary>
-        BeforeInsert,
-
-        /// <summary>
-        /// 対象の後に挿入を指示します
-        /// </summary>
-        AfterInsert,
-    }
-
-
-
-    /// <summary>
     /// PlayerLoopSystem構造体の内容をクラスとして表現され、更に調整するための機構を保持したクラスです
     /// </summary>
     public class ImtPlayerLoopSystem
     {
         /// <summary>
-        /// ループシステムの検索で、対象のループシステムを見つけられなかったときに返す値です
+        /// ループシステムの挿入をする時、対象の型に対して挿入するタイミングを指示します
         /// </summary>
+        public enum InsertTiming
+        {
+            /// <summary>
+            /// 対象の前に挿入を指示します
+            /// </summary>
+            BeforeInsert,
+
+            /// <summary>
+            /// 対象の後に挿入を指示します
+            /// </summary>
+            AfterInsert,
+        }
+
+
+
+        // 定数定義
         public const int LoopSystemNotFoundValue = -1;
-
-
 
         // クラス変数宣言
         private static ImtPlayerLoopSystem lastBuildLoopSystem;
@@ -2108,16 +2108,6 @@ namespace IceMilkTea.Core
 
 
         #region コンストラクタ
-        /// <summary>
-        /// クラスの初期化を行います
-        /// </summary>
-        static ImtPlayerLoopSystem()
-        {
-            // アプリケーション終了イベントを登録する
-            Application.quitting += OnApplicationQuit;
-        }
-
-
         /// <summary>
         /// 指定されたPlayerLoopSystem構造体オブジェクトから値をコピーしてインスタンスの初期化を行います。
         /// また、指定されたPlayerLoopSystem構造体オブジェクトにサブループシステムが存在する場合は再帰的にインスタンスの初期化が行われます。
@@ -2180,22 +2170,6 @@ namespace IceMilkTea.Core
         #endregion
 
 
-        #region Unityイベントハンドラ
-        /// <summary>
-        /// Unityがアプリケーションの終了をする時に呼び出されます
-        /// </summary>
-        private static void OnApplicationQuit()
-        {
-            //イベントの登録を解除する
-            Application.quitting -= OnApplicationQuit;
-
-
-            // Unityの弄り倒したループ構成をもとに戻してあげる
-            PlayerLoop.SetPlayerLoop(PlayerLoop.GetDefaultPlayerLoop());
-        }
-        #endregion
-
-
         #region Unity変換関数群
         /// <summary>
         /// Unityの標準プレイヤーループを ImtPlayerLoopSystem として取得します
@@ -2221,6 +2195,17 @@ namespace IceMilkTea.Core
 
 
         #region コントロール関数群
+        /// <summary>
+        /// Unityが提供するデフォルトのループシステムを復元します。
+        /// アプリケーションを停止する時などのタイミングで、必ず呼び出すようにしてください。
+        /// </summary>
+        public static void RestoreUnityDefaultLoopSystem()
+        {
+            // Unityの弄り倒したループ構成をもとに戻してあげる
+            PlayerLoop.SetPlayerLoop(PlayerLoop.GetDefaultPlayerLoop());
+        }
+
+
         /// <summary>
         /// BuildAndSetUnityDefaultPlayerLoop関数によって最後に構築されたループシステムを取得します。
         /// まだ一度も構築した経験がない場合は、GetUnityDefaultPlayerLoop関数の値を採用します。

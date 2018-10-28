@@ -100,12 +100,12 @@ namespace IceMilkTea.Profiler
 
             // 各種アップデートの更新関数を登録する
             var rootLoopSystem = ImtPlayerLoopSystem.GetLastBuildLoopSystem();
-            rootLoopSystem.InsertLoopSystem<FixedUpdate.ClearLines, FixedUpdateProbeStart>(InsertTiming.BeforeInsert, () => fixedUpdateStartCount = stopwatch.ElapsedTicks);
-            rootLoopSystem.InsertLoopSystem<FixedUpdate.ScriptRunDelayedFixedFrameRate, FixedUpdateProbeEnd>(InsertTiming.AfterInsert, () => fixedUpdateEndCount = stopwatch.ElapsedTicks);
-            rootLoopSystem.InsertLoopSystem<Update.ScriptRunBehaviourUpdate, UpdateProbeStart>(InsertTiming.BeforeInsert, () => updateStartCount = stopwatch.ElapsedTicks);
-            rootLoopSystem.InsertLoopSystem<Update.ScriptRunBehaviourUpdate, UpdateProbeEnd>(InsertTiming.AfterInsert, () => updateEndCount = stopwatch.ElapsedTicks);
-            rootLoopSystem.InsertLoopSystem<PreLateUpdate.ScriptRunBehaviourLateUpdate, LateUpdateProbeStart>(InsertTiming.BeforeInsert, () => lateUpdateStartCount = stopwatch.ElapsedTicks);
-            rootLoopSystem.InsertLoopSystem<PreLateUpdate.ScriptRunBehaviourLateUpdate, LateUpdateProbeEnd>(InsertTiming.AfterInsert, () => lateUpdateEndCount = stopwatch.ElapsedTicks);
+            rootLoopSystem.InsertLoopSystem<FixedUpdate.ClearLines, FixedUpdateProbeStart>(ImtPlayerLoopSystem.InsertTiming.BeforeInsert, () => fixedUpdateStartCount = stopwatch.ElapsedTicks);
+            rootLoopSystem.InsertLoopSystem<FixedUpdate.ScriptRunDelayedFixedFrameRate, FixedUpdateProbeEnd>(ImtPlayerLoopSystem.InsertTiming.AfterInsert, () => fixedUpdateEndCount = stopwatch.ElapsedTicks);
+            rootLoopSystem.InsertLoopSystem<Update.ScriptRunBehaviourUpdate, UpdateProbeStart>(ImtPlayerLoopSystem.InsertTiming.BeforeInsert, () => updateStartCount = stopwatch.ElapsedTicks);
+            rootLoopSystem.InsertLoopSystem<Update.ScriptRunBehaviourUpdate, UpdateProbeEnd>(ImtPlayerLoopSystem.InsertTiming.AfterInsert, () => updateEndCount = stopwatch.ElapsedTicks);
+            rootLoopSystem.InsertLoopSystem<PreLateUpdate.ScriptRunBehaviourLateUpdate, LateUpdateProbeStart>(ImtPlayerLoopSystem.InsertTiming.BeforeInsert, () => lateUpdateStartCount = stopwatch.ElapsedTicks);
+            rootLoopSystem.InsertLoopSystem<PreLateUpdate.ScriptRunBehaviourLateUpdate, LateUpdateProbeEnd>(ImtPlayerLoopSystem.InsertTiming.AfterInsert, () => lateUpdateEndCount = stopwatch.ElapsedTicks);
             rootLoopSystem.BuildAndSetUnityPlayerLoop();
 
 
